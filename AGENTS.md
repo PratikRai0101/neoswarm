@@ -14,19 +14,19 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                 NeoSwarm Backend                   │
-│         (Auth, Providers, Agents, API)             │
+│                 NeoSwarm Backend                    │
+│         (Auth, Providers, Agents, API)              │
 ├─────────────────────────────────────────────────────┤
-│                        │                             │
+│                        │                            │
 │           ┌───────────┴───────────┐                 │
-│           ▼                       ▼                  │
-│    ┌──────────────┐      ┌──────────────┐         │
-│    │   TUI App    │      │  Native App   │         │
-│    │  (Textual)   │      │   (Tauri)     │         │
-│    │              │      │                │         │
-│    │ OpenCode     │      │ Codex-style   │         │
-│    │  style TUI   │      │  Everything   │         │
-│    └──────────────┘      └──────────────┘         │
+│           ▼                       ▼                 │
+│    ┌──────────────┐      ┌──────────────┐           │
+│    │   TUI App    │      │  Native App  │           │
+│    │  (Textual)   │      │   (Tauri)    │           │
+│    │              │      │              │           │
+│    │ OpenCode     │      │ Codex-style  │           │
+│    │  style TUI   │      │  Everything  │           │
+│    └──────────────┘      └──────────────┘           │
 └─────────────────────────────────────────────────────┘
 ```
 
