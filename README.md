@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" alt="NeoSwarm Logo" width="128" height="128"/>
+  <img src="src-tauri/icons/icon.png" alt="NeoSwarm Logo" width="128" height="128"/>
 </p>
 
 <h1 align="center">NeoSwarm</h1>

@@ -73,8 +73,8 @@ class NeoSwarmTUI(App):
 
     async def on_mount(self) -> None:
         """Start up and connect to backend."""
-        console.print("[green]🐝 NeoSwarm TUI[/green]")
-        await self.connect_backend()
+        console.print("[green]NeoSwarm TUI[/green]")
+        self.connect_backend()
 
     @work
     async def connect_backend(self):
@@ -85,15 +85,15 @@ class NeoSwarmTUI(App):
                     f"{self.backend_url}/api/health/check", timeout=5.0
                 )
                 if resp.status_code == 200:
-                    console.print("[green]✓ Connected to backend[/green]")
+                    console.print("[green]Connected to backend[/green]")
                 else:
-                    console.print("[red]✗ Backend returned error[/red]")
+                    console.print("[red]Backend returned error[/red]")
         except Exception as e:
-            console.print(f"[red]✗ Cannot connect: {e}[/red]")
+            console.print(f"[red]Cannot connect: {e}[/red]")
 
     def action_new_session(self):
         """Start a new chat session."""
-        console.print("[cyan]→ Starting new session...[/cyan]")
+        console.print("[cyan]Starting new session...[/cyan]")
 
     def action_toggle_sidebar(self):
         """Toggle the sidebar."""
@@ -105,7 +105,7 @@ class NeoSwarmTUI(App):
 
     def action_refresh(self):
         """Refresh the view."""
-        console.print("[cyan]↻ Refreshing...[/cyan]")
+        console.print("[cyan]Refreshing...[/cyan]")
 
 
 def run_tui():
