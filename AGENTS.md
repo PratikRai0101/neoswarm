@@ -42,6 +42,12 @@ source backend/.venv/bin/activate
 PYTHONPATH=. python -m uvicorn backend.main:app --host 127.0.0.1 --port 8324
 ```
 
+### TUI (Terminal UI)
+```bash
+source backend/.venv/bin/activate
+python -m cli.tui
+```
+
 ### CLI
 ```bash
 cd cli
@@ -53,7 +59,11 @@ neoswarm status
 
 ### Native App
 ```bash
-./src-tauri/target/debug/neoswarm
+# AppImage (recommended)
+./src-tauri/target/release/bundle/appimage/NeoSwarm.AppDir/AppRun
+
+# Or standalone binary
+./src-tauri/target/release/neoswarm
 ```
 
 ### Health Check
@@ -94,5 +104,19 @@ Packaged data: `~/.local/share/NeoSwarm/data/` (Linux), `~/Library/Application S
 
 ---
 
-*Last updated: 2026-04-24*
-*All 5 phases complete — Phase 6: codebase cleanup also done*
+## Roadmap
+
+### In Progress
+- [ ] Auth system (OpenCode-style: `neoswarm auth login`)
+- [ ] Provider configuration (Anthropic, OpenAI, Ollama, Google)
+- [ ] Model switching mid-conversation
+- [ ] Enhanced TUI with full chat functionality
+
+### TODO
+- [ ] Fix standalone binary backend spawn
+- [ ] Build release AppImage with working bundler
+
+---
+
+*Last updated: 2026-04-25*
+*All 6 phases complete — moving to auth system and TUI enhancements*
