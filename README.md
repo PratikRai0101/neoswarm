@@ -57,17 +57,17 @@ Then open http://localhost:3000
 ┌─────────────────────────────────────┐
 │       USER INTERFACES               │
 │  Tauri GUI  │  TUI  │  CLI          │
-└──────┬──────────────────┬──────────┘
+└──────┬──────────────────┬───────────┘
        │     REST+WebSocket
        ▼
 ┌──────────────────────────────┐
 │    NEOSWARM CORE             │
 │    FastAPI :8324             │
-│  ┌──────────────────────┐   │
-│  │  Orchestrator Agent  │   │
-│  │  Agent Manager     │   │
-│  │  Provider Registry │   │
-│  └──────────────────────┘   │
+│  ┌──────────────────────┐    │
+│  │  Orchestrator Agent  │    │
+│  │  Agent Manager       │    │
+│  │  Provider Registry   │    │
+│  └──────────────────────┘    │
 └──────────────────────────────┘
        │
    Ollama (local) / Cloud APIs
