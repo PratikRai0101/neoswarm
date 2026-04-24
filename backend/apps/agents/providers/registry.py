@@ -1,8 +1,8 @@
 """Provider registry and model catalog.
 
-NeoSwarm uses native provider adapters (AnthropicProvider, OpenAICompatProvider,
-OllamaProvider, etc.) instead of claude-agent-sdk. Each provider implements
-BaseProvider for a consistent interface.
+NeoSwarm uses native provider adapters (AnthropicProvider, OllamaProvider,
+OpenAICompatProvider, GeminiProvider, etc.) instead of claude_agent_sdk.
+Each provider implements BaseProvider for a consistent interface.
 
 Model selection is configured per-session. Ollama runs fully local with no API key.
 """
@@ -29,30 +29,11 @@ logger = logging.getLogger(__name__)
 #   context_window   — tokens
 #   model_id         — bare model string for direct API calls (Anthropic key path)
 #   router_model_id  — prefixed string for 9Router routing (cc/, cx/, gc/, gh/)
+#                      NOTE: router_model_id is kept for compatibility but 9Router
+#                      is no longer supported — models route directly via their API.
 #   api              — "anthropic" | "codex" | "gemini-cli" | "github-copilot"
-#   subscription_only— True means hidden from picker unless 9Router has that
-#                      provider actively connected
-#   reasoning        — True for models that emit Anthropic `thinking` content
-#                      blocks via 9Router's translator. OpenSwarm's stream
-#                      handler at agent_manager.py:1141-1165 does not yet
-#                      render these blocks — final text still appears but
-#                      the reasoning trace is silently dropped. Tracked as
-#                      a follow-up; add a `thinking` case to the handler
-#                      to surface the trace.
-#
-# Model IDs match 9Router's internal routing catalog at
-# 9router/src/shared/constants/pricing.js. Each provider has a distinct
-# model-name convention:
-#   - cc/  (Claude Code subscription) uses dash-notation: claude-sonnet-4-6
-#   - cx/  (OpenAI Codex subscription) uses dot-notation with -codex suffix.
-#          Note: `gpt-5.4` is NOT available on this path — it's API-key-only.
-#          The Codex subscription's flagship is gpt-5.3-codex.
-#   - gc/  (Gemini CLI subscription) uses gemini-3-pro-preview / 3-flash-preview
-#          (thinking-capable) and gemini-2.5-pro / 2.5-flash (stable).
-#          Gemini 3 thought signatures handled via skip_thought_signature_validator.
-#   - gh/  (GitHub Copilot) uses dot-notation (claude-sonnet-4.6 not
-#          claude-sonnet-4-6) because Copilot has its own model catalog
-#          independent from Anthropic's API naming.
+#   subscription_only— True means hidden from picker unless provider is connected
+#   reasoning        — True for models that emit thinking content blocks
 
 BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
     # Anthropic: current-gen trio. Sonnet 4.6 (Feb 17 2026), Opus 4.6
@@ -209,100 +190,6 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
             "subscription_only": True,
         },
     ],
-    # GitHub Copilot — all plans (Free/Pro/Pro+) have access to the SAME
-    # models, just with different premium request quotas (50/300/1500).
-    # Model IDs MUST match 9Router's `gh:` pricing catalog at
-    # 9router/src/shared/constants/pricing.js — NOT the Codex CLI catalog.
-    # Copilot uses its own model IDs (dot-notation for Claude versions,
-    # different names from Codex CLI for some GPT models).
-    # See: https://github.com/features/copilot/plans
-    "OpenSwarm": [
-        # --- Free-tier friendly (low premium request cost) ---
-        {
-            "value": "gpt-5-mini",
-            "label": "GPT-5 Mini",
-            "context_window": 200_000,
-            "router_model_id": "gh/gpt-5-mini",
-            "api": "github-copilot",
-            "subscription_only": True,
-        },
-        {
-            "value": "claude-haiku-4.5",
-            "label": "Claude Haiku 4.5",
-            "context_window": 200_000,
-            "router_model_id": "gh/claude-haiku-4.5",
-            "api": "github-copilot",
-            "subscription_only": True,
-        },
-        {
-            "value": "grok-code-fast-1",
-            "label": "Grok Code Fast 1",
-            "context_window": 128_000,
-            "router_model_id": "gh/grok-code-fast-1",
-            "api": "github-copilot",
-            "subscription_only": True,
-        },
-        {
-            "value": "gpt-4.1",
-            "label": "GPT-4.1",
-            "context_window": 128_000,
-            "router_model_id": "gh/gpt-4.1",
-            "api": "github-copilot",
-            "subscription_only": True,
-        },
-        # --- Premium models (consume more premium requests) ---
-        {
-            "value": "claude-sonnet-4.6",
-            "label": "Claude Sonnet 4.6",
-            "context_window": 200_000,
-            "router_model_id": "gh/claude-sonnet-4.6",
-            "api": "github-copilot",
-            "subscription_only": True,
-        },
-        {
-            "value": "claude-opus-4.6",
-            "label": "Claude Opus 4.6",
-            "context_window": 200_000,
-            "router_model_id": "gh/claude-opus-4.6",
-            "api": "github-copilot",
-            "subscription_only": True,
-        },
-        {
-            "value": "gpt-5.3-codex",
-            "label": "GPT-5.3 Codex",
-            "context_window": 400_000,
-            "router_model_id": "gh/gpt-5.3-codex",
-            "api": "github-copilot",
-            "subscription_only": True,
-            "reasoning": True,
-        },
-        {
-            "value": "gemini-3-pro",
-            "label": "Gemini 3 Pro",
-            "context_window": 1_000_000,
-            "router_model_id": "gh/gemini-3-pro-preview",
-            "api": "github-copilot",
-            "subscription_only": True,
-            "reasoning": True,
-        },
-        {
-            "value": "gemini-3-flash",
-            "label": "Gemini 3 Flash",
-            "context_window": 1_000_000,
-            "router_model_id": "gh/gemini-3-flash-preview",
-            "api": "github-copilot",
-            "subscription_only": True,
-            "reasoning": True,
-        },
-        {
-            "value": "gemini-2.5-pro",
-            "label": "Gemini 2.5 Pro",
-            "context_window": 1_000_000,
-            "router_model_id": "gh/gemini-2.5-pro",
-            "api": "github-copilot",
-            "subscription_only": True,
-        },
-    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -320,7 +207,7 @@ def thinking_params_for(api: str, level: str, model_id: str = "") -> dict | None
     """Translate a provider-agnostic thinking level to per-provider API params.
 
     Args:
-        api: "anthropic" | "codex" | "gemini-cli" | "github-copilot"
+        api: "anthropic" | "codex" | "gemini-cli"
         level: "off" | "low" | "medium" | "high" | "auto"
         model_id: optional, used to pick adaptive vs legacy for Claude
 
@@ -356,8 +243,7 @@ def thinking_params_for(api: str, level: str, model_id: str = "") -> dict | None
         level_map = {"low": "LOW", "medium": "MEDIUM", "high": "HIGH"}
         return {"thinkingConfig": {"thinkingLevel": level_map[level]}}
 
-    # github-copilot goes through 9Router and doesn't expose a thinking
-    # param in its Copilot catalog — leave untouched.
+    # github-copilot goes through OpenRouter — leave untouched.
     return None
 
 
@@ -413,11 +299,6 @@ async def resolve_aux_model(
 # ---------------------------------------------------------------------------
 # Provider factory
 # ---------------------------------------------------------------------------
-
-
-def _is_9router_available() -> bool:
-    """Stub - 9Router no longer supported."""
-    return False
 
 
 def create_provider(
@@ -615,17 +496,6 @@ COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     ("Qwen", "qwen/qwen3-coder"): (0.0, 0.0),
     ("Qwen", "qwen/qwen3-235b-a22b"): (0.20, 0.70),
     ("Cohere", "cohere/command-a-03-2025"): (2.50, 10.0),
-    # GitHub Copilot (subscription-routed; no per-token cost)
-    ("OpenSwarm", "claude-sonnet-4.6"): (0.0, 0.0),
-    ("OpenSwarm", "claude-opus-4.6"): (0.0, 0.0),
-    ("OpenSwarm", "claude-haiku-4.5"): (0.0, 0.0),
-    ("OpenSwarm", "gpt-5.3-codex"): (0.0, 0.0),
-    ("OpenSwarm", "gpt-5-mini"): (0.0, 0.0),
-    ("OpenSwarm", "gpt-4.1"): (0.0, 0.0),
-    ("OpenSwarm", "grok-code-fast-1"): (0.0, 0.0),
-    ("OpenSwarm", "gemini-3-pro"): (0.0, 0.0),
-    ("OpenSwarm", "gemini-3-flash"): (0.0, 0.0),
-    ("OpenSwarm", "gemini-2.5-pro"): (0.0, 0.0),
 }
 
 

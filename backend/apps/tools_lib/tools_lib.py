@@ -25,7 +25,7 @@ from backend.apps.tools_lib.models import (
 
 logger = logging.getLogger(__name__)
 
-# Default Google OAuth credentials for the OpenSwarm project.
+# Default Google OAuth credentials for the NeoSwarm project.
 # Users should override via GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET env vars.
 _DEFAULT_GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID"
 _DEFAULT_GOOGLE_CLIENT_SECRET = "YOUR_CLIENT_SECRET"

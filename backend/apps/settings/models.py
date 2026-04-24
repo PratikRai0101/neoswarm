@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Any
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are a personal AI assistant running inside OpenSwarm.\n\n"
+    "You are a personal AI assistant running inside NeoSwarm.\n\n"
     "## Core Behavior\n"
     "Act, don't ask. When a tool can accomplish the task, call it immediately — "
     "do not describe what you would do, do not ask for confirmation, just execute. "
