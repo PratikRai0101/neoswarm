@@ -6,6 +6,15 @@
 
 **Phase 1: Fork + Rebrand + Linux Foundation** — ✅ COMPLETE
 
+## Phase 2: Native Agent System (IN PROGRESS)
+
+**Goal**: Replace `claude-agent-sdk` with native AgentLoop + add Ollama
+
+**From original plan**:
+- Get rid of `claude-agent-sdk`, promote written `agent_loop.py` with custom providers
+- Add OllamaProvider for local-only mode
+- Run agent truly locally with zero external API calls
+
 ## Project Structure
 
 ```
