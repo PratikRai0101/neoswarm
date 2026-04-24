@@ -10,6 +10,28 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 
 ---
 
+## Build Structure
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 NeoSwarm Backend                   │
+│         (Auth, Providers, Agents, API)             │
+├─────────────────────────────────────────────────────┤
+│                        │                             │
+│           ┌───────────┴───────────┐                 │
+│           ▼                       ▼                  │
+│    ┌──────────────┐      ┌──────────────┐         │
+│    │   TUI App    │      │  Native App   │         │
+│    │  (Textual)   │      │   (Tauri)     │         │
+│    │              │      │                │         │
+│    │ OpenCode     │      │ Codex-style   │         │
+│    │  style TUI   │      │  Everything   │         │
+│    └──────────────┘      └──────────────┘         │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Phase Status
 
 | Phase | Status | Description |
@@ -18,8 +40,8 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 | Phase 2: Native Agent System | ✅ Complete | Ollama support, native AgentLoop |
 | Phase 3: Orchestrator Agent | ✅ Complete | Multi-agent coordination |
 | Phase 4: CLI + TUI | ✅ Complete | Basic CLI and TUI |
-| Phase 5: Packaging | ✅ Complete | Tauri app with new icon |
-| Phase 6: Codex-style Features | 🔄 In Progress | Auth, TUI, memory, automation |
+| Phase 5: Packaging | ✅ Complete | Tauri app with custom icon |
+| Phase 6: Codex-style Features | 🔄 In Progress | Auth, TUI, memory |
 
 ---
 
@@ -100,32 +122,90 @@ The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) handles streaming, 
 
 ---
 
-## Features (Codex-style)
+## Complete Feature Roadmap
 
-### Implemented ✅
-| Feature | Description |
-|--------|-------------|
-| Multi-agent | Orchestrator coordinates multiple workers |
-| Browser Agent | Computer use via browser automation |
-| MCP Tools | 9+ built-in tools (Read, Write, Edit, Glob, Grep, etc.) |
-| Local Models | Ollama support (fully offline) |
-| Sessions | Chat session persistence |
-| Tauri App | Native desktop app with new icon |
+### STEP 1: Authentication System (Backend Core) 🔧
 
-### To Build 🔄
-| Feature | Priority | Description |
-|---------|-----------|-------------|
-| Auth System | High | Interactive provider setup (like OpenCode's `/connect`) |
-| Model Switching | High | Change model mid-conversation |
-| Enhanced Chat UI | High | Full message history, tool output display |
-| Memory System | Medium | Persistent context across sessions |
-| In-app Browser | Medium | Tauri webview integration |
-| Scheduled Tasks | Medium | Automation with scheduling |
-| 90+ Tools | Low | More MCP integrations |
+| Feature | OpenCode-style | Description |
+|---------|----------------|--------------|
+| `neoswarm auth login` | ✅ | Interactive provider setup |
+| `neoswarm auth logout` | ✅ | Remove credentials |
+| `neoswarm auth status` | ✅ | Show connected providers |
+| Auth storage | ✅ | `~/.neoswarm/auth.json` |
+| API key input | ✅ | Manual key entry |
+| OAuth (future) | 🔄 | Browser-based auth |
+| Env var priority | ✅ | ENV > auth.json > settings |
+
+**Files:** `backend/apps/settings/`, `cli/main.py`
+
+### STEP 2a: OpenCode-style TUI App 💻
+
+| Feature | OpenCode | Description |
+|---------|----------|--------------|
+| Chat interface | ✅ | Message input + history |
+| Model switching | ✅ | Switch mid-chat (`/model`) |
+| Provider status | ✅ | Show connected providers |
+| Session management | ✅ | Create/switch sessions |
+| Tools panel | ✅ | List MCP tools |
+| Keyboard shortcuts | ✅ | ^n, ^s, ^r bindings |
+| Command palette | ✅ | Quick actions |
+| Streaming responses | ✅ | Real-time output |
+
+**Files:** `cli/tui.py`
+
+### STEP 2b: Codex-style Native App 🖥️
+
+| Feature | OpenAI Codex | NeoSwarm | Priority |
+|---------|--------------|----------|----------|
+| Computer Use | ✅ macOS app control | ✅ Browser automation | High |
+| In-app Browser | ✅ Local servers + web | 🔄 Tauri webview | High |
+| Image Generation | ✅ gpt-image-1.5 | 🔄 Future tool | Low |
+| Memory | ✅ Persistent | 🔄 Session context | Medium |
+| 90+ Plugins | ✅ MCP servers | ✅ Have 9+ tools | Done |
+| Multi-agent | ✅ Parallel | ✅ Orchestrator | Done |
+| Automations | ✅ Scheduled tasks | 🔄 Future | Low |
+| Git Integration | ✅ PR review, commits | 🔄 Bash tools | Medium |
+| Artifact Viewer | ✅ PDF, spreadsheets | 🔄 Future | Low |
+| Terminal | ✅ Multiple tabs | 🔄 Future | Low |
+| SSH | ✅ Remote devboxes | 🔄 Future | Low |
+
+**Files:** `src-tauri/`, `frontend/`
 
 ---
 
-## Roadmap
+## Detailed Feature Comparison
+
+### TUI Features (OpenCode-style)
+
+| Feature | Command | Description |
+|---------|----------|--------------|
+| Chat | Default view | Send messages, see responses |
+| New Chat | `^n` or `/new` | Start new session |
+| Model Switch | `/model [name]` | Change active model |
+| List Models | `/models` | Show available models |
+| Auth | `/connect` | Connect provider |
+| Settings | `/settings` | Configure app |
+| Quit | `^q` | Exit TUI |
+
+### Native App Features (Codex-style)
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Multi-agent | ✅ | Orchestrator coordinates workers |
+| Browser Agent | ✅ | Computer use via browser |
+| MCP Tools | ✅ | 9+ built-in tools |
+| Sessions | ✅ | Chat session persistence |
+| Model Switching | 🔄 | Change mid-conversation |
+| Auth System | 🔄 | Interactive provider setup |
+| In-app Browser | 🔄 | Tauri webview |
+| Memory | 🔄 | Persistent context |
+| Scheduled Tasks | 🔄 | Automation |
+| Git Tools | 🔄 | Via Bash |
+| Image Gen | 🔄 | Future |
+
+---
+
+## Implementation Priority
 
 ### Phase 7: Auth System (High Priority)
 - [ ] `neoswarm auth login` command - Interactive provider setup
@@ -140,13 +220,14 @@ The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) handles streaming, 
 - [ ] Tool output display
 - [ ] Keyboard shortcuts (like OpenCode)
 
-### Phase 9: Memory System (Medium Priority)
-- [ ] Session context persistence
-- [ ] User preferences storage
-- [ ] Context carryover between sessions
+### Phase 9: Native App Enhancements (Medium Priority)
+- [ ] Full message history
+- [ ] Tool output panel
+- [ ] Settings panel
+- [ ] In-app browser (Tauri webview)
 
 ### Phase 10: Advanced Features (Low Priority)
-- [ ] In-app browser (Tauri webview)
+- [ ] Memory system
 - [ ] Scheduled/automated tasks
 - [ ] More MCP server integrations
 - [ ] Image generation tool
@@ -156,35 +237,35 @@ The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) handles streaming, 
 ## CLI Commands Reference
 
 ```bash
-# Chat with specific model
-neoswarm chat --model sonnet
+# Authentication
+neoswarm auth login        # Interactive provider setup
+neoswarm auth logout      # Remove credentials
+neoswarm auth status      # Show connected providers
 
-# Launch orchestrator mission
+# Chat
+neoswarm chat --model sonnet    # Chat with specific model
+neoswarm chat --model haiku     # Chat with haiku
+
+# Orchestrator
 neoswarm launch "build a web scraper" --workers 3
 
-# List available models
-neoswarm models
-
-# List sessions
-neoswarm sessions
-
-# Check backend status
-neoswarm status
-
-# Start backend server
-neoswarm server
+# Info
+neoswarm models           # List available models
+neoswarm sessions         # List sessions
+neoswarm status           # Check backend status
+neoswarm server           # Start backend server
 ```
 
 ---
 
-## Notes
+## Files to Modify
 
-- Backend imports use `backend.` prefix (e.g., `from backend.config.Apps import MainApp`)
-- Run from project root with `PYTHONPATH=.`
-- Health check is at `/api/health/check` not `/health`
-- MCP server names: `neoswarm-browser-agent`, `neoswarm-invoke-agent`
-- Default model: `sonnet` (Anthropic Sonnet 4.6)
-- Default provider: Ollama (local, no API key needed)
+| Layer | Files |
+|-------|-------|
+| **Backend Auth** | `backend/apps/settings/`, `backend/apps/settings/models.py` |
+| **CLI Commands** | `cli/main.py` |
+| **TUI** | `cli/tui.py` |
+| **Native App** | `src-tauri/`, `frontend/` (rebuild) |
 
 ---
 
@@ -197,6 +278,17 @@ neoswarm server
 | Multi-agent | ✅ Parallel agents | ✅ Orchestrator |
 | Open Source | ❌ Proprietary | ✅ MIT License |
 | Self-hosted | ❌ Requires OpenAI | ✅ Runs locally |
+
+---
+
+## Notes
+
+- Backend imports use `backend.` prefix (e.g., `from backend.config.Apps import MainApp`)
+- Run from project root with `PYTHONPATH=.`
+- Health check is at `/api/health/check` not `/health`
+- MCP server names: `neoswarm-browser-agent`, `neoswarm-invoke-agent`
+- Default model: `sonnet` (Anthropic Sonnet 4.6)
+- Default provider: Ollama (local, no API key needed)
 
 ---
 
