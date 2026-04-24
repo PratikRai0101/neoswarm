@@ -1,0 +1,26 @@
+.DS_Store
+.worktrees
+.env
+backend/data/**
+!backend/data/outputs/
+!backend/data/outputs/*.json
+
+# Electron build artifacts
+electron/dist/
+electron/python-env/
+electron/build-staging/
+electron/node_modules/
+electron/package-lock.json
+
+# 9Router build artifacts
+9router/node_modules/
+9router/.next/
+9router/package-lock.json
+
+# Pre-installed MCP server dependencies
+backend/npm-servers/*/node_modules/
+
+# Frontend build output
+frontend/dist/
+# Bundled uv binaries (downloaded during build)
+backend/uv-bin/

@@ -1,0 +1,1598 @@
+import asyncio
+import hashlib
+import json
+import os
+import re
+import logging
+import secrets
+import shutil
+import time
+from contextlib import asynccontextmanager
+from typing import Any, Optional
+from urllib.parse import urlencode
+
+import httpx
+from dotenv import load_dotenv
+from fastapi import HTTPException, Query
+from fastapi.responses import HTMLResponse
+from backend.config.Apps import SubApp
+from backend.apps.tools_lib.models import (
+    ToolDefinition,
+    ToolCreate,
+    ToolUpdate,
+    BUILTIN_TOOLS,
+)
+
+logger = logging.getLogger(__name__)
+
+# Default Google OAuth credentials for the OpenSwarm project.
+# Users should override via GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET env vars.
+_DEFAULT_GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID"
+_DEFAULT_GOOGLE_CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+os.environ.setdefault("GOOGLE_OAUTH_CLIENT_ID", _DEFAULT_GOOGLE_CLIENT_ID)
+os.environ.setdefault("GOOGLE_OAUTH_CLIENT_SECRET", _DEFAULT_GOOGLE_CLIENT_SECRET)
+
+from backend.config.paths import (
+    BACKEND_DIR,
+    DATA_ROOT,
+    TOOLS_DIR as DATA_DIR,
+    BUILTIN_PERMISSIONS_PATH as BUILTIN_PERMS_PATH,
+)
+
+load_dotenv(os.path.join(BACKEND_DIR, ".env"))
+if os.environ.get("OPENSWARM_PACKAGED") == "1":
+    load_dotenv(os.path.join(os.path.dirname(DATA_ROOT), ".env"), override=True)
+
+
+@asynccontextmanager
+async def tools_lib_lifespan():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    yield
+
+
+tools_lib = SubApp("tools", tools_lib_lifespan)
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+GOOGLE_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/contacts.readonly",
+]
+
+AIRTABLE_AUTH_URL = "https://airtable.com/oauth2/v1/authorize"
+AIRTABLE_TOKEN_URL = "https://airtable.com/oauth2/v1/token"
+AIRTABLE_SCOPES = [
+    "data.records:read",
+    "data.records:write",
+    "data.recordComments:read",
+    "data.recordComments:write",
+    "schema.bases:read",
+    "schema.bases:write",
+    "user.email:read",
+]
+
+HUBSPOT_AUTH_URL = "https://mcp-na2.hubspot.com/oauth/authorize/user"
+HUBSPOT_TOKEN_URL = "https://api.hubapi.com/oauth/v1/token"
+
+DISCORD_AUTH_URL = "https://discord.com/oauth2/authorize"
+DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
+
+
+# Maps state -> {tool_id, code_verifier (for PKCE flows)}
+_pending_oauth: dict[str, dict] = {}
+
+
+def _load_all() -> list[ToolDefinition]:
+    result = []
+    if not os.path.exists(DATA_DIR):
+        return result
+    for fname in os.listdir(DATA_DIR):
+        if fname.endswith(".json"):
+            with open(os.path.join(DATA_DIR, fname)) as f:
+                result.append(ToolDefinition(**json.load(f)))
+    return result
+
+
+def _save(tool: ToolDefinition):
+    with open(os.path.join(DATA_DIR, f"{tool.id}.json"), "w") as f:
+        json.dump(tool.model_dump(), f, indent=2)
+
+
+def _load(tool_id: str) -> ToolDefinition:
+    path = os.path.join(DATA_DIR, f"{tool_id}.json")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Tool not found")
+    with open(path) as f:
+        return ToolDefinition(**json.load(f))
+
+
+@tools_lib.router.get("/builtin")
+async def list_builtin_tools():
+    return {"tools": [t.model_dump() for t in BUILTIN_TOOLS]}
+
+
+def load_builtin_permissions() -> dict[str, str]:
+    if not os.path.exists(BUILTIN_PERMS_PATH):
+        return {}
+    with open(BUILTIN_PERMS_PATH) as f:
+        return json.load(f)
+
+
+def save_builtin_permissions(perms: dict[str, str]):
+    os.makedirs(os.path.dirname(BUILTIN_PERMS_PATH), exist_ok=True)
+    with open(BUILTIN_PERMS_PATH, "w") as f:
+        json.dump(perms, f, indent=2)
+
+
+@tools_lib.router.get("/builtin/permissions")
+async def get_builtin_permissions():
+    return {"permissions": load_builtin_permissions()}
+
+
+@tools_lib.router.put("/builtin/permissions")
+async def update_builtin_permissions(body: dict):
+    valid_tools = {t.name for t in BUILTIN_TOOLS}
+    valid_policies = {"always_allow", "ask", "deny"}
+    perms = load_builtin_permissions()
+    for name, policy in body.get("permissions", {}).items():
+        if name in valid_tools and policy in valid_policies:
+            perms[name] = policy
+    save_builtin_permissions(perms)
+    return {"permissions": perms}
+
+
+@tools_lib.router.get("/list")
+async def list_tools():
+    return {"tools": [t.model_dump() for t in _load_all()]}
+
+
+@tools_lib.router.get("/oauth/callback")
+async def oauth_callback(code: str = Query(...), state: str = Query("")):
+    pending = _pending_oauth.pop(state, None)
+    if not pending:
+        return HTMLResponse(
+            "<html><body><h2>Invalid OAuth state</h2></body></html>", status_code=400
+        )
+
+    tool_id = pending if isinstance(pending, str) else pending["tool_id"]
+    code_verifier = pending.get("code_verifier") if isinstance(pending, dict) else None
+
+    tool = _load(tool_id)
+    _port = os.environ.get("OPENSWARM_PORT", "8324")
+    redirect_uri = f"http://localhost:{_port}/api/tools/oauth/callback"
+
+    if tool.name.lower() == "airtable":
+        # Airtable OAuth: PKCE flow
+        client_id = os.environ.get("AIRTABLE_OAUTH_CLIENT_ID", "")
+        client_secret = os.environ.get("AIRTABLE_OAUTH_CLIENT_SECRET", "")
+        import base64
+
+        credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                AIRTABLE_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "code_verifier": code_verifier or "",
+                    "client_id": client_id,
+                },
+                headers={
+                    "Authorization": f"Basic {credentials}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.warning(f"Airtable OAuth token exchange failed: {resp.text}")
+            return HTMLResponse(
+                f"<html><body><h2>Token exchange failed</h2><pre>{resp.text}</pre></body></html>",
+                status_code=400,
+            )
+
+        tokens = resp.json()
+        tool.oauth_tokens = {
+            "access_token": tokens.get("access_token", ""),
+            "refresh_token": tokens.get("refresh_token", ""),
+            "token_expiry": time.time() + tokens.get("expires_in", 7200),
+        }
+        tool.auth_type = "oauth2"
+        tool.auth_status = "connected"
+        tool.connected_account_email = "Airtable account"
+
+    elif tool.name.lower() == "hubspot":
+        # HubSpot OAuth 2.1: PKCE flow
+        client_id = os.environ.get("HUBSPOT_OAUTH_CLIENT_ID", "")
+        client_secret = os.environ.get("HUBSPOT_OAUTH_CLIENT_SECRET", "")
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                HUBSPOT_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code_verifier": code_verifier or "",
+                },
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.warning(f"HubSpot OAuth token exchange failed: {resp.text}")
+            return HTMLResponse(
+                f"<html><body><h2>Token exchange failed</h2><pre>{resp.text}</pre></body></html>",
+                status_code=400,
+            )
+
+        tokens = resp.json()
+        tool.oauth_tokens = {
+            "access_token": tokens.get("access_token", ""),
+            "refresh_token": tokens.get("refresh_token", ""),
+            "token_expiry": time.time() + tokens.get("expires_in", 1800),
+        }
+        tool.auth_type = "oauth2"
+        tool.auth_status = "connected"
+        tool.connected_account_email = "HubSpot account"
+
+    elif tool.name.lower() == "discord":
+        # Discord bot install OAuth: exchange code, capture guild_id of the
+        # server the user added the bot to. Multiple connect calls APPEND
+        # additional guild_ids so users can authorize multiple servers.
+        client_id = os.environ.get("DISCORD_OAUTH_CLIENT_ID", "")
+        client_secret = os.environ.get("DISCORD_OAUTH_CLIENT_SECRET", "")
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                DISCORD_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                },
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.warning(f"Discord OAuth token exchange failed: {resp.text}")
+            return HTMLResponse(
+                f"<html><body><h2>Token exchange failed</h2><pre>{resp.text}</pre></body></html>",
+                status_code=400,
+            )
+
+        tokens = resp.json()
+        guild = tokens.get("guild") or {}
+        new_guild_id = guild.get("id", "")
+        new_guild_name = guild.get("name", "")
+        existing = tool.oauth_tokens.get("guilds") or []
+        # Append unless this guild was already authorized
+        if new_guild_id and not any(g.get("id") == new_guild_id for g in existing):
+            existing.append({"id": new_guild_id, "name": new_guild_name})
+        tool.oauth_tokens = {
+            # Bot token lives in .env, NEVER stored on the tool. We only
+            # track the list of authorized guilds for scope enforcement.
+            "guilds": existing,
+        }
+        tool.auth_type = "oauth2"
+        tool.auth_status = "connected"
+        names = ", ".join(g.get("name", "") for g in existing if g.get("name"))
+        tool.connected_account_email = (
+            f"{len(existing)} server{'s' if len(existing) != 1 else ''}"
+            + (f" · {names}" if names else "")
+        )
+
+    elif tool.name.lower() == "notion":
+        # Notion OAuth: Basic auth with client_id:secret
+        notion_client_id = os.environ.get("NOTION_OAUTH_CLIENT_ID", "")
+        notion_client_secret = os.environ.get("NOTION_OAUTH_CLIENT_SECRET", "")
+        import base64
+
+        credentials = base64.b64encode(
+            f"{notion_client_id}:{notion_client_secret}".encode()
+        ).decode()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.notion.com/v1/oauth/token",
+                json={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+                headers={
+                    "Authorization": f"Basic {credentials}",
+                    "Content-Type": "application/json",
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.warning(f"Notion OAuth token exchange failed: {resp.text}")
+            return HTMLResponse(
+                f"<html><body><h2>Token exchange failed</h2><pre>{resp.text}</pre></body></html>",
+                status_code=400,
+            )
+
+        tokens = resp.json()
+        tool.oauth_tokens = {
+            "access_token": tokens.get("access_token", ""),
+        }
+        tool.auth_type = "oauth2"
+        tool.auth_status = "connected"
+        tool.connected_account_email = tokens.get("workspace_name", "Notion workspace")
+    else:
+        # Google OAuth
+        client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+        client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.warning(f"OAuth token exchange failed: {resp.text}")
+            return HTMLResponse(
+                f"<html><body><h2>Token exchange failed</h2><pre>{resp.text}</pre></body></html>",
+                status_code=400,
+            )
+
+        tokens = resp.json()
+        access_token = tokens.get("access_token", "")
+        tool.oauth_tokens = {
+            "access_token": access_token,
+            "refresh_token": tokens.get("refresh_token", ""),
+            "token_expiry": time.time() + tokens.get("expires_in", 3600),
+        }
+        tool.auth_type = "oauth2"
+        tool.auth_status = "connected"
+
+        if access_token:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as info_client:
+                    info_resp = await info_client.get(
+                        GOOGLE_USERINFO_URL,
+                        headers={"Authorization": f"Bearer {access_token}"},
+                    )
+                if info_resp.status_code == 200:
+                    tool.connected_account_email = info_resp.json().get("email")
+            except Exception as e:
+                logger.warning(f"Failed to fetch Google userinfo: {e}")
+
+    _save(tool)
+
+    return HTMLResponse(
+        """
+    <html><body>
+    <h2 style="font-family:sans-serif;color:#22c55e">Connected successfully!</h2>
+    <p style="font-family:sans-serif;color:#666">You can close this window.</p>
+    <script>
+      if (window.opener) window.opener.postMessage({type:'oauth_complete', tool_id:'"""
+        + tool_id
+        + """'}, '*');
+      setTimeout(() => window.close(), 1500);
+    </script>
+    </body></html>
+    """
+    )
+
+
+@tools_lib.router.get("/{tool_id}")
+async def get_tool(tool_id: str):
+    return _load(tool_id).model_dump()
+
+
+@tools_lib.router.post("/create")
+async def create_tool(body: ToolCreate):
+    tool = ToolDefinition(
+        name=body.name,
+        description=body.description,
+        command=body.command,
+        mcp_config=body.mcp_config,
+        credentials=body.credentials,
+        auth_type=body.auth_type,
+        auth_status=body.auth_status,
+    )
+    _save(tool)
+    return {"ok": True, "tool": tool.model_dump()}
+
+
+@tools_lib.router.put("/{tool_id}")
+async def update_tool(tool_id: str, body: ToolUpdate):
+    tool = _load(tool_id)
+    for k, v in body.model_dump(exclude_none=True).items():
+        setattr(tool, k, v)
+    _save(tool)
+    return {"ok": True, "tool": tool.model_dump()}
+
+
+@tools_lib.router.delete("/{tool_id}")
+async def delete_tool(tool_id: str):
+    path = os.path.join(DATA_DIR, f"{tool_id}.json")
+    if os.path.exists(path):
+        os.remove(path)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# MCP config derivation
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_server_name(name: str) -> str:
+    """Convert a tool name into a valid MCP server identifier (alphanumeric + hyphens)."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def _extra_bin_dirs() -> list[str]:
+    """Well-known user-local bin directories that may not be on PATH in packaged apps."""
+    home = os.path.expanduser("~")
+    # Bundled uv-bin (ships uvx for non-dev users)
+    _backend = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    dirs = [
+        os.path.join(_backend, "uv-bin"),
+        os.path.join(home, ".bun", "bin"),
+        os.path.join(home, ".cargo", "bin"),
+        os.path.join(home, ".local", "bin"),
+        os.path.join(home, ".volta", "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+    ]
+    # nvm: pick the newest installed node version
+    nvm_node = os.path.join(home, ".nvm", "versions", "node")
+    try:
+        if os.path.isdir(nvm_node):
+            versions = sorted(os.listdir(nvm_node), reverse=True)
+            if versions:
+                dirs.insert(0, os.path.join(nvm_node, versions[0], "bin"))
+    except OSError:
+        pass
+    # fnm
+    fnm_bin = os.path.join(
+        home, "Library", "Application Support", "fnm", "aliases", "default", "bin"
+    )
+    if os.path.isdir(fnm_bin):
+        dirs.insert(0, fnm_bin)
+    return dirs
+
+
+def _resolve_command(command: str) -> str | None:
+    """Find a command on PATH, falling back to common user-local bin directories
+    and bundled binaries (uv-bin for uvx/uv)."""
+    found = shutil.which(command)
+    if found:
+        return found
+    for d in _extra_bin_dirs():
+        candidate = os.path.join(d, command)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    # Check bundled uv-bin directory (ships uv/uvx for non-dev users)
+    _backend = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+    if _is_packaged:
+        # In packaged app: <resources>/backend/uv-bin/
+        candidate = os.path.join(_backend, "uv-bin", command)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    else:
+        # In dev: backend/uv-bin/
+        candidate = os.path.join(_backend, "uv-bin", command)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _augmented_path() -> str:
+    """Return PATH with extra bin dirs prepended (for child process environments)."""
+    extra = [d for d in _extra_bin_dirs() if os.path.isdir(d)]
+    current = os.environ.get("PATH", "")
+    seen: set[str] = set()
+    parts: list[str] = []
+    for p in extra + current.split(os.pathsep):
+        if p and p not in seen:
+            seen.add(p)
+            parts.append(p)
+    return os.pathsep.join(parts)
+
+
+def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
+    """Build the claude_agent_sdk mcp_servers config entry for a tool.
+
+    Returns None if the tool cannot be configured (e.g. missing data).
+    """
+    if not tool.mcp_config:
+        return None
+
+    config: dict = dict(tool.mcp_config)
+
+    if tool.credentials:
+        if config.get("type") in ("http", "sse"):
+            headers = config.setdefault("headers", {})
+            for key, val in tool.credentials.items():
+                if key.lower() in ("authorization", "api_key", "api-key"):
+                    headers.setdefault("Authorization", f"Bearer {val}")
+        else:
+            env = config.setdefault("env", {})
+            env.update(tool.credentials)
+
+    if tool.oauth_tokens.get("access_token"):
+        if config.get("type") in ("http", "sse"):
+            headers = config.setdefault("headers", {})
+            headers["Authorization"] = f"Bearer {tool.oauth_tokens['access_token']}"
+        else:
+            env = config.setdefault("env", {})
+            env["OAUTH_ACCESS_TOKEN"] = tool.oauth_tokens["access_token"]
+            if tool.name.lower() == "notion":
+                env["NOTION_TOKEN"] = tool.oauth_tokens["access_token"]
+            if tool.name.lower() == "hubspot":
+                env["PRIVATE_APP_ACCESS_TOKEN"] = tool.oauth_tokens["access_token"]
+            if tool.oauth_tokens.get("refresh_token"):
+                env["GOOGLE_WORKSPACE_REFRESH_TOKEN"] = tool.oauth_tokens[
+                    "refresh_token"
+                ]
+            client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+            client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+            if client_id:
+                env["GOOGLE_WORKSPACE_CLIENT_ID"] = client_id
+            if client_secret:
+                env["GOOGLE_WORKSPACE_CLIENT_SECRET"] = client_secret
+
+    # Discord: bot token is loaded from .env at MCP launch time. It is NEVER
+    # stored on the tool definition or exposed to the frontend. The tool only
+    # tracks the list of authorized guild IDs (in oauth_tokens.guilds) which
+    # are used by the agent system prompt to scope what the agent may access.
+    if tool.name.lower() == "discord" and config.get("type") == "stdio":
+        bot_token = os.environ.get("DISCORD_BOT_TOKEN", "")
+        if bot_token:
+            env = config.setdefault("env", {})
+            env["DISCORD_TOKEN"] = bot_token
+
+    # Microsoft 365 MCP: use a stable token cache path shared across process spawns
+    if tool.name.lower() == "microsoft 365" and config.get("type") == "stdio":
+        env = config.setdefault("env", {})
+        cache_dir = os.path.join(os.path.expanduser("~"), ".openswarm")
+        os.makedirs(cache_dir, exist_ok=True)
+        env["MS365_MCP_TOKEN_CACHE_PATH"] = os.path.join(
+            cache_dir, "ms365-token-cache.json"
+        )
+        env["MS365_MCP_SELECTED_ACCOUNT_PATH"] = os.path.join(
+            cache_dir, "ms365-selected-account.json"
+        )
+
+    if config.get("type") == "stdio":
+        if config.get("command"):
+            # Check for bundled npm MCP servers — use Electron's Node.js instead of npx
+            if config["command"] in ("npx", "bunx"):
+                pkg_name = next(
+                    (a for a in (config.get("args") or []) if not a.startswith("-")),
+                    None,
+                )
+                if pkg_name:
+                    _backend = os.path.dirname(
+                        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    )
+                    electron_path = os.environ.get("OPENSWARM_ELECTRON_PATH")
+                    # Check for single-file bundle first (e.g. reddit-mcp-buddy)
+                    bundle_path = os.path.join(
+                        _backend, "mcp-bundles", f"{pkg_name}.js"
+                    )
+                    if os.path.isfile(bundle_path) and electron_path:
+                        config["command"] = electron_path
+                        config["args"] = [bundle_path]
+                        config.setdefault("env", {})["ELECTRON_RUN_AS_NODE"] = "1"
+                        logger.info(f"Using bundled MCP server for {pkg_name}")
+                    else:
+                        # Check for pre-installed npm package (works in both dev and packaged modes)
+                        safe_dir = pkg_name.replace("/", "-").replace("@", "")
+                        npm_dir = os.path.join(_backend, "npm-servers", safe_dir)
+                        pkg_json_path = os.path.join(
+                            npm_dir, "node_modules", pkg_name, "package.json"
+                        )
+                        if os.path.isfile(pkg_json_path):
+                            import json as _json
+
+                            with open(pkg_json_path) as f:
+                                pkg_meta = _json.load(f)
+                            bin_field = pkg_meta.get("bin", {})
+                            entry = (
+                                list(bin_field.values())[0]
+                                if isinstance(bin_field, dict)
+                                else bin_field
+                            )
+                            node_cmd = electron_path or shutil.which("node")
+                            if node_cmd:
+                                config["command"] = node_cmd
+                                config["args"] = [
+                                    os.path.join(
+                                        npm_dir, "node_modules", pkg_name, entry
+                                    )
+                                ]
+                                if electron_path:
+                                    config.setdefault("env", {})[
+                                        "ELECTRON_RUN_AS_NODE"
+                                    ] = "1"
+                                logger.info(
+                                    f"Using pre-installed npm MCP server for {pkg_name}"
+                                )
+
+            if not os.path.isabs(config.get("command", "")):
+                resolved = _resolve_command(config["command"])
+                if resolved:
+                    config["command"] = resolved
+                else:
+                    logger.warning(
+                        f"Command '{config['command']}' not found on PATH or bundled directories"
+                    )
+        env = config.setdefault("env", {})
+        env.setdefault("PATH", _augmented_path())
+        env.setdefault("PYTHONPATH", "")
+        # Point uv/uvx at our bundled Python — avoids macOS CLT popup on fresh Macs
+        # and avoids downloading Python at runtime
+        _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+        if _is_packaged:
+            _resources = os.path.dirname(
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                )
+            )
+            _bundled_python = os.path.join(_resources, "python-env", "bin", "python3")
+            if os.path.exists(_bundled_python):
+                env.setdefault("UV_PYTHON", _bundled_python)
+        else:
+            _backend = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+            _venv_python = os.path.join(_backend, ".venv", "bin", "python3")
+            if os.path.exists(_venv_python):
+                env.setdefault("UV_PYTHON", _venv_python)
+
+    return config
+
+
+# ---------------------------------------------------------------------------
+# OAuth2 flow for Google Workspace (and other OAuth providers)
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# MCP tool discovery
+# ---------------------------------------------------------------------------
+
+_READ_PREFIXES = (
+    "get",
+    "list",
+    "read",
+    "search",
+    "fetch",
+    "find",
+    "query",
+    "count",
+    "check",
+    "describe",
+    "show",
+    "download",
+    "browse",
+    "analy",
+    "explain",
+)
+_WRITE_PREFIXES = (
+    "create",
+    "write",
+    "delete",
+    "update",
+    "send",
+    "remove",
+    "modify",
+    "add",
+    "set",
+    "put",
+    "post",
+    "patch",
+    "insert",
+    "move",
+    "copy",
+    "rename",
+    "archive",
+    "trash",
+    "publish",
+    "approve",
+    "reject",
+)
+
+
+_SERVICE_RULES: list[tuple[list[str], str, str]] = [
+    # (keywords, service_name, group)
+    # Google Workspace
+    (["gmail"], "Gmail", "Google"),
+    (["drive"], "Drive", "Google"),
+    (["calendar", "event", "freebusy"], "Calendar", "Google"),
+    (["spreadsheet", "sheet"], "Sheets", "Google"),
+    (["doc", "paragraph", "table"], "Docs", "Google"),
+    (["chat", "space", "reaction", "message"], "Chat", "Google"),
+    (["form", "publish_settings"], "Forms", "Google"),
+    (["presentation", "slide", "page"], "Slides", "Google"),
+    (["task_list", "task"], "Tasks", "Google"),
+    (["contact"], "Contacts", "Google"),
+    (["script", "deployment", "version", "trigger"], "Apps Script", "Google"),
+    (["search_custom", "search_engine"], "Search", "Google"),
+    # YouTube
+    (["transcript", "caption"], "Transcripts", "YouTube"),
+    (
+        ["video_detail", "video_comment", "video_categor", "video_engagement"],
+        "Videos",
+        "YouTube",
+    ),
+    (["search_video", "trending_video"], "Search", "YouTube"),
+    (["channel_stat", "channel_top"], "Channels", "YouTube"),
+    # Reddit (before Twitter so "search_reddit" etc. don't mis-match)
+    (["subreddit"], "Subreddits", "Reddit"),
+    (["search_reddit"], "Search", "Reddit"),
+    (["post_detail"], "Posts", "Reddit"),
+    (["user_analysis"], "Users", "Reddit"),
+    (["reddit_explain"], "Reference", "Reddit"),
+]
+
+
+def _categorize_tool(name: str) -> str:
+    lower = name.lower().replace("_", " ").replace("-", " ").strip()
+    for word in lower.split():
+        for prefix in _READ_PREFIXES:
+            if word.startswith(prefix):
+                return "read"
+        for prefix in _WRITE_PREFIXES:
+            if word.startswith(prefix):
+                return "write"
+    return "write"
+
+
+def _extract_service(name: str) -> tuple[str, str]:
+    """Extract the service and group from a tool name (e.g. 'search_gmail_messages' -> ('Gmail', 'Google'))."""
+    lower = name.lower()
+    for keywords, display, group in _SERVICE_RULES:
+        for kw in keywords:
+            if kw in lower:
+                return display, group
+    return "Other", ""
+
+
+def _parse_sse_json(text: str) -> dict | None:
+    """Extract JSON from an SSE response body (handles `data: {...}` lines)."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("data:"):
+            payload = stripped[len("data:") :].strip()
+            if payload:
+                try:
+                    return json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+async def _discover_mcp_tools_http(url: str, headers: dict | None = None) -> list[dict]:
+    """Connect to a Streamable HTTP MCP server and call tools/list via JSON-RPC POST."""
+    h = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        **(headers or {}),
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        init_resp = await client.post(
+            url,
+            headers=h,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "self-swarm", "version": "0.1.0"},
+                },
+            },
+        )
+        if init_resp.status_code not in (200, 201):
+            raise HTTPException(
+                status_code=502,
+                detail=f"MCP initialize failed: {init_resp.status_code}",
+            )
+
+        session_id = init_resp.headers.get("mcp-session-id", "")
+        if session_id:
+            h["mcp-session-id"] = session_id
+
+        await client.post(
+            url,
+            headers=h,
+            json={
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+            },
+        )
+
+        list_resp = await client.post(
+            url,
+            headers=h,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {},
+            },
+        )
+        if list_resp.status_code not in (200, 201):
+            raise HTTPException(
+                status_code=502,
+                detail=f"MCP tools/list failed: {list_resp.status_code}",
+            )
+
+        ct = list_resp.headers.get("content-type", "")
+        if "text/event-stream" in ct:
+            data = _parse_sse_json(list_resp.text)
+        else:
+            data = list_resp.json()
+
+        if not data:
+            raise HTTPException(
+                status_code=502, detail="Empty response from MCP server"
+            )
+
+        tools_list = data.get("result", {}).get("tools", [])
+        return [
+            {
+                "name": t.get("name", ""),
+                "description": t.get("description", ""),
+                "inputSchema": t.get("inputSchema"),
+            }
+            for t in tools_list
+        ]
+
+
+async def _discover_mcp_tools_sse(url: str, headers: dict | None = None) -> list[dict]:
+    """Connect to a legacy SSE MCP server (GET event-stream + POST messages) and call tools/list."""
+    from mcp.client.sse import sse_client
+    from mcp import ClientSession
+    from mcp.types import Implementation
+
+    try:
+        async with sse_client(
+            url=url,
+            headers=headers,
+            timeout=30,
+            sse_read_timeout=30,
+        ) as (read_stream, write_stream):
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                client_info=Implementation(name="self-swarm", version="0.1.0"),
+            ) as session:
+                await session.initialize()
+                result = await session.list_tools()
+                return [
+                    {
+                        "name": t.name,
+                        "description": t.description or "",
+                        "inputSchema": t.inputSchema if t.inputSchema else None,
+                    }
+                    for t in result.tools
+                ]
+    except BaseExceptionGroup as eg:
+        first = eg.exceptions[0] if eg.exceptions else eg
+        raise HTTPException(
+            status_code=502, detail=f"SSE discovery failed: {first}"
+        ) from first
+
+
+async def _discover_mcp_tools_stdio(
+    command: str, args: list[str] | None = None, env: dict | None = None
+) -> list[dict]:
+    """Spawn a stdio MCP server process and call tools/list via JSON-RPC over stdin/stdout."""
+    cmd_path = _resolve_command(command)
+    if not cmd_path:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Command '{command}' not found on PATH or common install locations",
+        )
+
+    proc_env = {**os.environ, **(env or {}), "PATH": _augmented_path()}
+    proc_env.pop("PYTHONPATH", None)
+
+    proc = await asyncio.create_subprocess_exec(
+        cmd_path,
+        *(args or []),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=proc_env,
+        limit=10 * 1024 * 1024,  # 10 MB buffer for large tool lists
+    )
+
+    async def _send(msg: dict) -> None:
+        line = json.dumps(msg) + "\n"
+        proc.stdin.write(line.encode())
+        await proc.stdin.drain()
+
+    async def _recv() -> dict:
+        """Read JSON-RPC responses, skipping notification lines (no 'id' field)."""
+        while True:
+            line = await asyncio.wait_for(proc.stdout.readline(), timeout=30.0)
+            if not line:
+                stderr_out = ""
+                try:
+                    stderr_out = (
+                        await asyncio.wait_for(proc.stderr.read(4096), timeout=2.0)
+                    ).decode(errors="replace")
+                except (asyncio.TimeoutError, Exception):
+                    pass
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"MCP stdio process exited unexpectedly{': ' + stderr_out if stderr_out else ''}",
+                )
+            stripped = line.decode(errors="replace").strip()
+            if not stripped:
+                continue
+            try:
+                data = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if "id" in data:
+                return data
+
+    try:
+        await _send(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "self-swarm", "version": "0.1.0"},
+                },
+            }
+        )
+        await _recv()
+
+        await _send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+        await _send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        data = await _recv()
+
+        tools_list = data.get("result", {}).get("tools", [])
+        return [
+            {
+                "name": t.get("name", ""),
+                "description": t.get("description", ""),
+                "inputSchema": t.get("inputSchema"),
+            }
+            for t in tools_list
+        ]
+
+    except HTTPException:
+        raise
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504, detail="MCP stdio server timed out during discovery"
+        )
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            proc.terminate()
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
+@tools_lib.router.post("/{tool_id}/discover")
+async def discover_tools(tool_id: str):
+    tool = _load(tool_id)
+
+    if tool.auth_type == "oauth2" and tool.auth_status == "connected":
+        if tool.oauth_tokens.get("refresh_token"):
+            if tool.name.lower() == "airtable":
+                refreshed = await refresh_airtable_token(tool)
+            elif tool.name.lower() == "hubspot":
+                refreshed = await refresh_hubspot_token(tool)
+            else:
+                refreshed = await refresh_google_token(tool)
+            if not refreshed and tool.oauth_tokens.get("access_token"):
+                expiry = tool.oauth_tokens.get("token_expiry", 0)
+                if time.time() >= expiry - 60:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"OAuth token expired and refresh failed. Try reconnecting {tool.name}.",
+                    )
+
+    config = derive_mcp_config(tool)
+    if not config:
+        raise HTTPException(status_code=400, detail="Cannot derive MCP config for tool")
+
+    transport = config.get("type", "")
+
+    try:
+        if transport == "stdio":
+            command = config.get("command", "")
+            if not command:
+                raise HTTPException(
+                    status_code=400,
+                    detail="stdio transport requires a 'command' in MCP config",
+                )
+            raw_tools = await _discover_mcp_tools_stdio(
+                command=command,
+                args=config.get("args"),
+                env=config.get("env"),
+            )
+        elif transport in ("http", "sse") or config.get("url"):
+            url = config.get("url", "")
+            if not url:
+                raise HTTPException(
+                    status_code=400,
+                    detail="HTTP/SSE transport requires a 'url' in MCP config",
+                )
+            if transport == "sse":
+                raw_tools = await _discover_mcp_tools_sse(url, config.get("headers"))
+            else:
+                try:
+                    raw_tools = await _discover_mcp_tools_http(
+                        url, config.get("headers")
+                    )
+                except HTTPException:
+                    logger.info(
+                        f"Streamable HTTP failed for {tool.name}, retrying with SSE transport"
+                    )
+                    raw_tools = await _discover_mcp_tools_sse(
+                        url, config.get("headers")
+                    )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported MCP transport type: '{transport}'. Use 'stdio', 'http', or 'sse'.",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        msg = str(e).strip()
+        if not msg:
+            msg = type(e).__name__
+        logger.warning(
+            f"MCP tool discovery failed for {tool.name}: {msg}", exc_info=True
+        )
+        raise HTTPException(status_code=502, detail=f"Discovery failed: {msg}")
+
+    services: dict[str, dict[str, list[str]]] = {}
+    service_groups: dict[str, list[str]] = {}
+    permissions: dict[str, Any] = {}
+
+    for t in raw_tools:
+        name = t["name"]
+        cat = _categorize_tool(name)
+        svc, group = _extract_service(name)
+        if svc not in services:
+            services[svc] = {"read": [], "write": []}
+        services[svc][cat].append(name)
+        permissions[name] = tool.tool_permissions.get(name, "ask")
+        if group:
+            service_groups.setdefault(group, [])
+            if svc not in service_groups[group]:
+                service_groups[group].append(svc)
+
+    all_read = [n for s in services.values() for n in s["read"]]
+    all_write = [n for s in services.values() for n in s["write"]]
+    permissions["_categories"] = {"read": all_read, "write": all_write}
+    permissions["_services"] = services
+    permissions["_service_groups"] = service_groups
+    permissions["_tool_descriptions"] = {t["name"]: t["description"] for t in raw_tools}
+    permissions["_tool_schemas"] = {
+        t["name"]: t.get("inputSchema") for t in raw_tools if t.get("inputSchema")
+    }
+
+    tool.tool_permissions = permissions
+    _save(tool)
+
+    return {"ok": True, "tool": tool.model_dump()}
+
+
+# ---------------------------------------------------------------------------
+# Microsoft 365 device-code login (runs in the backend, not the MCP server)
+# ---------------------------------------------------------------------------
+
+_m365_login_processes: dict[
+    str, dict
+] = {}  # tool_id -> {proc, device_code, status, email}
+
+
+def _m365_server_script() -> str:
+    _backend = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    return os.path.join(
+        _backend,
+        "npm-servers",
+        "softeria-ms-365-mcp-server",
+        "node_modules",
+        "@softeria",
+        "ms-365-mcp-server",
+        "dist",
+        "index.js",
+    )
+
+
+def _m365_cache_env() -> dict[str, str]:
+    cache_dir = os.path.join(os.path.expanduser("~"), ".openswarm")
+    os.makedirs(cache_dir, exist_ok=True)
+    return {
+        "MS365_MCP_TOKEN_CACHE_PATH": os.path.join(cache_dir, "ms365-token-cache.json"),
+        "MS365_MCP_SELECTED_ACCOUNT_PATH": os.path.join(
+            cache_dir, "ms365-selected-account.json"
+        ),
+    }
+
+
+@tools_lib.router.post("/{tool_id}/m365/device-login")
+async def m365_device_login(tool_id: str):
+    """Start a Microsoft 365 device-code login.
+
+    Spawns the MCP server with --login in a long-lived subprocess.
+    Returns the device code and URL for the user to authenticate.
+    """
+    import subprocess
+
+    tool = _load(tool_id)
+    script = _m365_server_script()
+    if not os.path.isfile(script):
+        raise HTTPException(status_code=500, detail="M365 MCP server not installed")
+
+    node = shutil.which("node")
+    electron = os.environ.get("OPENSWARM_ELECTRON_PATH")
+    cmd = electron or node
+    if not cmd:
+        raise HTTPException(status_code=500, detail="No node/electron found")
+
+    env = {**os.environ, **_m365_cache_env()}
+    if electron:
+        env["ELECTRON_RUN_AS_NODE"] = "1"
+
+    # Kill any existing login process for this tool
+    existing = _m365_login_processes.pop(tool_id, None)
+    if existing and existing.get("proc"):
+        try:
+            existing["proc"].kill()
+        except Exception:
+            pass
+
+    proc = subprocess.Popen(
+        [cmd, script, "--login"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        text=True,
+    )
+
+    # Read stdout lines until we find the device code (MSAL prints it)
+    import threading
+
+    login_state: dict = {
+        "proc": proc,
+        "status": "waiting_for_code",
+        "device_code": "",
+        "device_code_url": "",
+        "email": None,
+        "output": "",
+    }
+
+    def _read_output():
+        import re
+
+        for line in proc.stdout:
+            login_state["output"] += line
+            # MSAL device code message contains the URL and code
+            code_match = re.search(r"enter the code\s+(\S+)", line, re.IGNORECASE)
+            url_match = re.search(r"(https://\S+)", line)
+            if code_match:
+                login_state["device_code"] = code_match.group(1)
+                login_state["status"] = "awaiting_auth"
+            if url_match and "microsoft" in url_match.group(1).lower():
+                login_state["device_code_url"] = url_match.group(1)
+        # Process ended — check result
+        proc.wait()
+        remaining_stderr = proc.stderr.read() if proc.stderr else ""
+        login_state["output"] += remaining_stderr
+        if proc.returncode == 0:
+            login_state["status"] = "connected"
+            # Try to extract email from output
+            try:
+                import json as _j
+
+                result = _j.loads(login_state["output"].strip().split("\n")[-1])
+                if result.get("success"):
+                    ud = result.get("userData", {})
+                    login_state["email"] = ud.get("userPrincipalName") or ud.get(
+                        "displayName"
+                    )
+            except Exception:
+                pass
+            # Update tool status
+            try:
+                t = _load(tool_id)
+                t.auth_status = "connected"
+                if login_state.get("email"):
+                    t.connected_account_email = login_state["email"]
+                _save(t)
+            except Exception:
+                pass
+        else:
+            login_state["status"] = "error"
+
+    thread = threading.Thread(target=_read_output, daemon=True)
+    thread.start()
+
+    _m365_login_processes[tool_id] = login_state
+
+    # Wait briefly for device code to appear
+    for _ in range(30):
+        if login_state["device_code"]:
+            break
+        await asyncio.sleep(0.2)
+
+    if not login_state["device_code"]:
+        return {
+            "status": "error",
+            "message": "Timed out waiting for device code from MCP server",
+        }
+
+    return {
+        "status": "awaiting_auth",
+        "device_code": login_state["device_code"],
+        "device_code_url": login_state["device_code_url"]
+        or "https://login.microsoft.com/device",
+    }
+
+
+@tools_lib.router.get("/{tool_id}/m365/device-login/status")
+async def m365_device_login_status(tool_id: str):
+    """Poll the status of a pending M365 device-code login."""
+    state = _m365_login_processes.get(tool_id)
+    if not state:
+        # Check if already connected via cached token
+        cache_env = _m365_cache_env()
+        cache_path = cache_env["MS365_MCP_TOKEN_CACHE_PATH"]
+        if os.path.isfile(cache_path):
+            tool = _load(tool_id)
+            if tool.auth_status == "connected":
+                return {"status": "connected", "email": tool.connected_account_email}
+        return {"status": "no_login_in_progress"}
+
+    status = state["status"]
+    result: dict = {"status": status}
+    if status == "connected":
+        result["email"] = state.get("email")
+        _m365_login_processes.pop(tool_id, None)
+    elif status == "error":
+        result["message"] = "Login failed"
+        _m365_login_processes.pop(tool_id, None)
+
+    return result
+
+
+@tools_lib.router.post("/{tool_id}/m365/disconnect")
+async def m365_disconnect(tool_id: str):
+    """Disconnect M365 by clearing the cached token."""
+    tool = _load(tool_id)
+    cache_env = _m365_cache_env()
+    for path in cache_env.values():
+        if os.path.isfile(path):
+            os.remove(path)
+    tool.auth_status = "configured"
+    tool.connected_account_email = None
+    _save(tool)
+    return {"ok": True, "tool": tool.model_dump()}
+
+
+@tools_lib.router.post("/{tool_id}/oauth/disconnect")
+async def oauth_disconnect(tool_id: str):
+    """Clear OAuth tokens and reset auth status so the user can reconnect with a different account."""
+    tool = _load(tool_id)
+    access_token = tool.oauth_tokens.get("access_token")
+
+    if access_token and tool.name.lower() != "notion":
+        # Revoke Google tokens
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    "https://oauth2.googleapis.com/revoke",
+                    params={"token": access_token},
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+        except Exception as e:
+            logger.warning(f"Failed to revoke Google token for tool {tool.id}: {e}")
+
+    tool.oauth_tokens = {}
+    tool.auth_status = "configured"
+    tool.connected_account_email = None
+    _save(tool)
+    return {"ok": True, "tool": tool.model_dump()}
+
+
+@tools_lib.router.post("/{tool_id}/oauth/start")
+async def oauth_start(tool_id: str):
+    tool = _load(tool_id)
+    _port = os.environ.get("OPENSWARM_PORT", "8324")
+    redirect_uri = f"http://localhost:{_port}/api/tools/oauth/callback"
+    state = tool_id
+
+    if tool.name.lower() == "airtable":
+        client_id = os.environ.get("AIRTABLE_OAUTH_CLIENT_ID", "")
+        if not client_id:
+            raise HTTPException(
+                status_code=400,
+                detail="AIRTABLE_OAUTH_CLIENT_ID not set in backend .env",
+            )
+        # PKCE: generate code_verifier and code_challenge
+        code_verifier = secrets.token_urlsafe(96)
+        code_challenge = hashlib.sha256(code_verifier.encode()).digest()
+        import base64
+
+        code_challenge_b64 = (
+            base64.urlsafe_b64encode(code_challenge).rstrip(b"=").decode()
+        )
+        _pending_oauth[state] = {"tool_id": tool_id, "code_verifier": code_verifier}
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(AIRTABLE_SCOPES),
+            "state": state,
+            "code_challenge": code_challenge_b64,
+            "code_challenge_method": "S256",
+        }
+        auth_url = f"{AIRTABLE_AUTH_URL}?{urlencode(params)}"
+    elif tool.name.lower() == "hubspot":
+        client_id = os.environ.get("HUBSPOT_OAUTH_CLIENT_ID", "")
+        if not client_id:
+            raise HTTPException(
+                status_code=400,
+                detail="HUBSPOT_OAUTH_CLIENT_ID not set in backend .env",
+            )
+        code_verifier = secrets.token_urlsafe(96)
+        code_challenge = hashlib.sha256(code_verifier.encode()).digest()
+        import base64
+
+        code_challenge_b64 = (
+            base64.urlsafe_b64encode(code_challenge).rstrip(b"=").decode()
+        )
+        _pending_oauth[state] = {"tool_id": tool_id, "code_verifier": code_verifier}
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge_b64,
+            "code_challenge_method": "S256",
+            "state": state,
+        }
+        auth_url = f"{HUBSPOT_AUTH_URL}?{urlencode(params)}"
+    elif tool.name.lower() == "discord":
+        client_id = os.environ.get("DISCORD_OAUTH_CLIENT_ID", "")
+        if not client_id:
+            raise HTTPException(
+                status_code=400,
+                detail="DISCORD_OAUTH_CLIENT_ID not set in backend .env",
+            )
+        permissions = os.environ.get("DISCORD_BOT_PERMISSIONS", "0")
+        _pending_oauth[state] = {"tool_id": tool_id}
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "bot identify",
+            "permissions": permissions,
+            "state": state,
+        }
+        auth_url = f"{DISCORD_AUTH_URL}?{urlencode(params)}"
+    elif tool.name.lower() == "notion":
+        _pending_oauth[state] = {"tool_id": tool_id}
+        client_id = os.environ.get("NOTION_OAUTH_CLIENT_ID", "")
+        if not client_id:
+            raise HTTPException(
+                status_code=400, detail="NOTION_OAUTH_CLIENT_ID not set in backend .env"
+            )
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "owner": "user",
+            "state": state,
+        }
+        auth_url = f"https://api.notion.com/v1/oauth/authorize?{urlencode(params)}"
+    else:
+        _pending_oauth[state] = {"tool_id": tool_id}
+        client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+        if not client_id:
+            raise HTTPException(
+                status_code=400, detail="GOOGLE_OAUTH_CLIENT_ID not set in backend .env"
+            )
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(GOOGLE_SCOPES),
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state,
+        }
+        auth_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+
+    return {"auth_url": auth_url}
+
+
+async def refresh_google_token(tool: ToolDefinition) -> Optional[str]:
+    """Refresh an expired Google OAuth token. Returns the fresh access_token or None."""
+    if tool.auth_type != "oauth2":
+        return None
+    refresh_token = tool.oauth_tokens.get("refresh_token")
+    if not refresh_token:
+        return None
+    expiry = tool.oauth_tokens.get("token_expiry", 0)
+    if time.time() < expiry - 60:
+        return tool.oauth_tokens.get("access_token")
+
+    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            new_token = data["access_token"]
+            tool.oauth_tokens["access_token"] = new_token
+            tool.oauth_tokens["token_expiry"] = time.time() + data.get(
+                "expires_in", 3600
+            )
+
+            if not tool.connected_account_email:
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as info_client:
+                        info_resp = await info_client.get(
+                            GOOGLE_USERINFO_URL,
+                            headers={"Authorization": f"Bearer {new_token}"},
+                        )
+                    if info_resp.status_code == 200:
+                        tool.connected_account_email = info_resp.json().get("email")
+                except Exception:
+                    pass
+
+            _save(tool)
+            return new_token
+    except Exception as e:
+        logger.warning(f"Google token refresh failed for tool {tool.id}: {e}")
+    return None
+
+
+async def refresh_airtable_token(tool: ToolDefinition) -> Optional[str]:
+    """Refresh an expired Airtable OAuth token. Returns the fresh access_token or None."""
+    if tool.auth_type != "oauth2":
+        return None
+    refresh_token = tool.oauth_tokens.get("refresh_token")
+    if not refresh_token:
+        return None
+    expiry = tool.oauth_tokens.get("token_expiry", 0)
+    if time.time() < expiry - 60:
+        return tool.oauth_tokens.get("access_token")
+
+    client_id = os.environ.get("AIRTABLE_OAUTH_CLIENT_ID", "")
+    client_secret = os.environ.get("AIRTABLE_OAUTH_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        return None
+
+    try:
+        import base64
+
+        credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                AIRTABLE_TOKEN_URL,
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": client_id,
+                },
+                headers={
+                    "Authorization": f"Basic {credentials}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            tool.oauth_tokens["access_token"] = data["access_token"]
+            tool.oauth_tokens["token_expiry"] = time.time() + data.get(
+                "expires_in", 7200
+            )
+            if data.get("refresh_token"):
+                tool.oauth_tokens["refresh_token"] = data["refresh_token"]
+            _save(tool)
+            return data["access_token"]
+    except Exception as e:
+        logger.warning(f"Airtable token refresh failed for tool {tool.id}: {e}")
+    return None
+
+
+async def refresh_hubspot_token(tool: ToolDefinition) -> Optional[str]:
+    """Refresh an expired HubSpot OAuth token. Returns the fresh access_token or None."""
+    if tool.auth_type != "oauth2":
+        return None
+    refresh_token = tool.oauth_tokens.get("refresh_token")
+    if not refresh_token:
+        return None
+    expiry = tool.oauth_tokens.get("token_expiry", 0)
+    if time.time() < expiry - 60:
+        return tool.oauth_tokens.get("access_token")
+
+    client_id = os.environ.get("HUBSPOT_OAUTH_CLIENT_ID", "")
+    client_secret = os.environ.get("HUBSPOT_OAUTH_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                HUBSPOT_TOKEN_URL,
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                },
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            tool.oauth_tokens["access_token"] = data["access_token"]
+            tool.oauth_tokens["token_expiry"] = time.time() + data.get(
+                "expires_in", 1800
+            )
+            if data.get("refresh_token"):
+                tool.oauth_tokens["refresh_token"] = data["refresh_token"]
+            _save(tool)
+            return data["access_token"]
+    except Exception as e:
+        logger.warning(f"HubSpot token refresh failed for tool {tool.id}: {e}")
+    return None
