@@ -59,7 +59,9 @@ bash run.sh
 
 - [x] Backend requires `PYTHONPATH=.` when running - WORKS
 - [x] Added debug.py stub - FIXED
-- [ ] 9Router code remaining in agent_manager.py (not critical)
+- [x] OllamaProvider added for local models - WORKS
+- [x] Ollama models added to registry (llama3.3, qwen2.5, mistral, codellama, deepseek-coder)
+- [ ] agent_manager.py still uses claude_agent_sdk import (large refactor - Phase 2 continued)
 - [ ] Needs Tauri build configuration
 
 ## Running Backend
