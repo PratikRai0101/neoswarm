@@ -158,6 +158,7 @@ The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) handles streaming, 
 | Feature | OpenAI Codex | NeoSwarm | Priority |
 |---------|--------------|----------|----------|
 | Computer Use | ✅ macOS app control | ✅ Browser automation | High |
+| **Native App Control** | ❌ | 🔄 Future (Linux first, then macOS) | Future |
 | In-app Browser | ✅ Local servers + web | 🔄 Tauri webview | High |
 | Image Generation | ✅ gpt-image-1.5 | 🔄 Future tool | Low |
 | Memory | ✅ Persistent | 🔄 Session context | Medium |
@@ -278,6 +279,107 @@ neoswarm server           # Start backend server
 | Multi-agent | ✅ Parallel agents | ✅ Orchestrator |
 | Open Source | ❌ Proprietary | ✅ MIT License |
 | Self-hosted | ❌ Requires OpenAI | ✅ Runs locally |
+
+---
+
+## Swarm Architecture: Orchestrator vs Parallel Agents
+
+### Option 1: Orchestrator (NeoSwarm's Approach) 🤖
+
+```
+         ┌─────────────┐
+         │   Mission   │
+         └──────┬──────┘
+                │
+         ┌──────▼──────┐
+         │ Manager/    │
+         │ Orchestrator│
+         └──────┬──────┘
+                │
+    ┌─────────┼─────────┐
+    │         │         │
+┌───▼───┐ ┌──▼───┐ ┌──▼───┐
+│Worker1│ │Worker2│ │Worker3│
+│  FE   │ │  BE   │ │ Tests│
+└───┬───┘ └───┬───┘ └───┬───┘
+    │         │         │
+    └─────────┼─────────┘
+              │
+       ┌─────▼─────┐
+       │  Manager   │
+       │ Synthesizes│
+       │   Result  │
+       └───────────┘
+```
+
+**How it works:**
+- 1 Manager receives the mission
+- Manager breaks it into subtasks
+- Manager assigns workers to each subtask
+- Workers report back to manager
+- Manager synthesizes final result
+
+**Pros:**
+- ✅ Organized, structured
+- ✅ No duplicate work
+- ✅ Manager handles coordination
+- ✅ Better for complex missions
+
+**Cons:**
+- ❌ Single point of failure (manager)
+- ❌ Requires good manager prompt
+
+---
+
+### Option 2: Parallel Agents (OpenAI Codex Approach) ⚡
+
+```
+┌─────────────┐
+│   Mission   │
+└──────┬──────┘
+       │
+┌──────┼──────┐
+│      │      │
+▼      ▼      ▼
+┌──┐ ┌──┐ ┌──┐
+│A1│ │A2│ │A3│
+└──┘ └──┘ └──┘
+```
+
+**How it works:**
+- Multiple independent agents run at the same time
+- Each agent works on its own task
+- User manages all threads manually
+- No central coordinator
+
+**Pros:**
+- ✅ Fast (all start at once)
+- ✅ No bottleneck
+- ✅ Simple architecture
+
+**Cons:**
+- ❌ May do duplicate work
+- ❌ User must coordinate
+- ❌ Hard to synthesize results
+- ❌ Can conflict with each other
+
+---
+
+### Which is Better?
+
+| Factor | Orchestrator | Parallel |
+|--------|-------------|----------|
+| **Complex missions** | ✅ Better | ❌ Hard to coordinate |
+| **Simple tasks** | ⚖️ Overhead | ✅ Fast |
+| **Reliability** | ❌ Single point | ✅ Distributed |
+| **Result quality** | ✅ Synthesized | ⚖️ May conflict |
+| **Speed** | ⚖️ Sequential | ✅ Truly parallel |
+
+**Verdict:** 
+- **Orchestrator** is better for **complex, multi-step missions** (like "build a web app")
+- **Parallel** is better for **simple, independent tasks** (like "answer these 3 questions")
+
+**NeoSwarm uses Orchestrator** - it's more structured and produces better results for complex work.
 
 ---
 
