@@ -42,14 +42,46 @@ Built for **Linux first**, then Windows, then macOS. Available as a **Tauri GUI*
 
 ## Quick Start
 
+### 1. Backend (FastAPI)
+
 ```bash
-# Clone and run
-git clone https://github.com/YOUR_USERNAME/neoswarm.git
 cd neoswarm
-bash run.sh
+source backend/.venv/bin/activate
+PYTHONPATH=. python -m uvicorn backend.main:app --port 8324
 ```
 
-Then open http://localhost:3000
+Then open:
+- **API**: http://localhost:8324
+- **Health**: http://localhost:8324/api/health/check
+- **API Docs**: http://localhost:8324/docs
+
+### 2. CLI
+
+```bash
+cd neoswarm/cli
+pip install -e .
+
+# Commands
+neoswarm models      # Show available models
+neoswarm status      # Show session status
+neoswarm sessions    # List all sessions
+```
+
+### 3. Native App (Tauri)
+
+```bash
+# Run the pre-built binary
+./src-tauri/target/debug/neoswarm
+
+# Or build release
+cargo tauri build
+```
+
+### 4. Run Script
+
+```bash
+bash run.sh
+```
 
 ## Architecture
 
