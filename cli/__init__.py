@@ -14,7 +14,7 @@ import os
 import sys
 from typing import Optional
 
-import asyncclick as click
+import click
 import httpx
 from rich.console import Console
 from rich.table import Table
@@ -162,14 +162,14 @@ def models():
     table.add_column("Model", style="green")
     table.add_column("Context", style="yellow")
 
-    for p, m in [
+    for p, m, context in [
         ("Anthropic", "claude-sonnet-4-6", "1M"),
         ("Anthropic", "claude-opus-4-6", "1M"),
         ("Anthropic", "claude-haiku-4-5", "200K"),
         ("Ollama", "llama3.3", "128K"),
         ("Ollama", "qwen2.5", "128K"),
     ]:
-        table.add_row(p, m, f"{context}")
+        table.add_row(p, m, context)
 
     console.print(table)
 
