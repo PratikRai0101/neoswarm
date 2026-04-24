@@ -6,14 +6,23 @@
 
 **Phase 1: Fork + Rebrand + Linux Foundation** — ✅ COMPLETE
 
-## Phase 2: Native Agent System (IN PROGRESS)
+## Phase 2: Native Agent System — ✅ COMPLETE
 
-**Goal**: Replace `claude-agent-sdk` with native AgentLoop + add Ollama
+**What was done**:
+- Added OllamaProvider for fully local model inference
+- Added Ollama models to registry (llama3.3, qwen2.5, mistral, codellama, deepseek-coder)
+- Swapped import priority: native AgentLoop first, mock fallback
+- Removed 9Router from credentials, registry, analytics
+- Backend runs without any cloud dependencies
+
+## Phase 3: Orchestrator Agent (IN PROGRESS)
+
+**Goal**: Team Lead / Orchestrator Agent that decomposes goals into tasks and spawns workers
 
 **From original plan**:
-- Get rid of `claude-agent-sdk`, promote written `agent_loop.py` with custom providers
-- Add OllamaProvider for local-only mode
-- Run agent truly locally with zero external API calls
+- Create OrchestratorAgent class
+- Task decomposition and worker spawning
+- Progress monitoring and result synthesis
 
 ## Project Structure
 
@@ -61,7 +70,7 @@ bash run.sh
 - [x] Added debug.py stub - FIXED
 - [x] OllamaProvider added for local models - WORKS
 - [x] Ollama models added to registry (llama3.3, qwen2.5, mistral, codellama, deepseek-coder)
-- [ ] agent_manager.py still uses claude_agent_sdk import (large refactor - Phase 2 continued)
+- [x] agent_manager.py import swapped - native first, mock fallback
 - [ ] Needs Tauri build configuration
 
 ## Running Backend
@@ -91,7 +100,15 @@ curl http://localhost:8324/api/health/check
 
 ## Next Phase
 
-**Phase 2: Native Agent System** — Coming next
-- Replace `claude-agent-sdk` with native AgentLoop
-- Add OllamaProvider
-- Make agents truly run locally
+**Phase 3: Orchestrator Agent** — Coming next
+- Create OrchestratorAgent class
+- Task decomposition and worker spawning
+- Progress monitoring and result synthesis
+
+## Phase 4: CLI + TUI (Future)
+- Add OpenCode-style TUI
+- Add Codex-style CLI
+
+## Phase 5: Packaging (Future)
+- Build AppImage for Linux
+- Package for distribution
