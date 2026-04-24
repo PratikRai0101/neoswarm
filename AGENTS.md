@@ -109,6 +109,17 @@ The system uses a pluggable provider adapter pattern:
 ### Agent Loop
 The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) handles streaming, tool use, and HITL approvals in a provider-agnostic way.
 
+### Orchestrator Modes
+The orchestrator supports **both sequential and parallel** execution modes:
+- **Sequential**: Workers complete tasks one by one (better for dependent tasks)
+- **Parallel**: Workers run simultaneously (better for independent tasks)
+- **User Choice**: Users can select mode when launching a mission
+
+### Computer Use
+NeoSwarm supports two levels of computer automation:
+- **Browser Automation** ✅ (Current): Controls web browsers for web automation, testing, scraping
+- **Native App Control** 🔄 (Future): Controls native applications (Linux first, then macOS)
+
 ### Environment Variables
 - `NEOSWARM_PORT` — backend port (default: 8324)
 - `NEOSWARM_PACKAGED` — set to "1" when running as Tauri app
@@ -157,13 +168,12 @@ The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) handles streaming, 
 
 | Feature | OpenAI Codex | NeoSwarm | Priority |
 |---------|--------------|----------|----------|
-| Computer Use | ✅ macOS app control | ✅ Browser automation | High |
-| **Native App Control** | ❌ | 🔄 Future (Linux first, then macOS) | Future |
+| Computer Use | ✅ macOS app control | ✅ Browser automation + 🔄 Native App Control (Linux first, then macOS) | High |
 | In-app Browser | ✅ Local servers + web | 🔄 Tauri webview | High |
 | Image Generation | ✅ gpt-image-1.5 | 🔄 Future tool | Low |
 | Memory | ✅ Persistent | 🔄 Session context | Medium |
 | 90+ Plugins | ✅ MCP servers | ✅ Have 9+ tools | Done |
-| Multi-agent | ✅ Parallel | ✅ Orchestrator | Done |
+| Multi-agent | ✅ Parallel | ✅ Orchestrator (sequential or parallel - user choice) | Done |
 | Automations | ✅ Scheduled tasks | 🔄 Future | Low |
 | Git Integration | ✅ PR review, commits | 🔄 Bash tools | Medium |
 | Artifact Viewer | ✅ PDF, spreadsheets | 🔄 Future | Low |
@@ -274,7 +284,7 @@ neoswarm server           # Start backend server
 
 | Feature | Codex | NeoSwarm |
 |---------|-------|----------|
-| Computer Use | ✅ macOS app control | ✅ Browser automation |
+| Computer Use | ✅ macOS app control | ✅ Browser automation + Native app control (Linux/macOS) |
 | Local Models | ❌ Cloud only | ✅ Ollama (fully local) |
 | Multi-agent | ✅ Parallel agents | ✅ Orchestrator |
 | Open Source | ❌ Proprietary | ✅ MIT License |
