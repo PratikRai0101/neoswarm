@@ -1,19 +1,19 @@
 use log::{error, info};
+use std::path::PathBuf;
 use std::process::Command;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
 pub fn spawn_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let backend_dir = app
-        .path()
-        .resolve("backend", tauri::PathResolution::BaseDir)?;
+    let resource_dir = app.path().resource_dir()?;
+    let backend_dir: PathBuf = resource_dir.join("backend");
 
     if !backend_dir.exists() {
         error!("Backend directory not found: {:?}", backend_dir);
         return Ok(());
     }
 
-    info!("Spawning backend from: {:?}", backend_dir);
+    info!("Spawning backend from: {:?}", backend_dir.display());
 
     let python = find_python();
     info!("Using Python: {}", python);
@@ -30,7 +30,7 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
             "--port",
             "8324",
         ])
-        .current_dir(backend_dir.to_string())
+        .current_dir(backend_dir)
         .spawn()?;
 
     app.manage(child);

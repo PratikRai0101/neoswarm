@@ -4,12 +4,12 @@ version = "0.1.0"
 description = "NeoSwarm - AI Agent Orchestrator"
 authors = ["Pratik Rai"]
 license = "MIT"
-repository = ""
+repository = "https://github.com/PratikRai0101/neoswarm"
 edition = "2021"
 
 [lib]
 name = "neoswarm_lib"
-crate-type = ["lib", "cdylib", "static"]
+crate-type = ["lib", "cdylib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
