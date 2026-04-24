@@ -1,7 +1,7 @@
 """Provider registry and model catalog.
 
 NeoSwarm uses native provider adapters (AnthropicProvider, OllamaProvider,
-OpenAICompatProvider, GeminiProvider, etc.) instead of claude_agent_sdk.
+OpenAICompatProvider, GeminiProvider, etc.) instead of external SDKs.
 Each provider implements BaseProvider for a consistent interface.
 
 Model selection is configured per-session. Ollama runs fully local with no API key.
@@ -28,9 +28,6 @@ logger = logging.getLogger(__name__)
 #   label            — display name in the model picker
 #   context_window   — tokens
 #   model_id         — bare model string for direct API calls (Anthropic key path)
-#   router_model_id  — prefixed string for 9Router routing (cc/, cx/, gc/, gh/)
-#                      NOTE: router_model_id is kept for compatibility but 9Router
-#                      is no longer supported — models route directly via their API.
 #   api              — "anthropic" | "codex" | "gemini-cli" | "github-copilot"
 #   subscription_only— True means hidden from picker unless provider is connected
 #   reasoning        — True for models that emit thinking content blocks
@@ -148,12 +145,11 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
     # Google: Gemini via Gemini CLI subscription. Both 3.x (thinking-
     # capable) and 2.5 (stable) are offered. Gemini 3 models have
     # always-on thinking with per-session thought signatures that are
-    # lost during the format translation round-trip. We use Google's
-    # official workaround: `skip_thought_signature_validator` on all
-    # historical function call and thinking parts (see 9router
-    # openai-to-gemini.js). This bypasses signature validation at the
-    # cost of the model not being able to build on prior reasoning
-    # across turns — but all tools work and thinking is visible.
+    # lost during format translation round-trips. Google's official
+    # workaround uses `skip_thought_signature_validator` on all
+    # historical function call and thinking parts. This bypasses
+    # signature validation at the cost of the model not being able
+    # to build on prior reasoning across turns — but all tools work.
     "Google": [
         {
             "value": "gemini-3-pro",
@@ -400,7 +396,7 @@ def _has_credentials(provider_name: str, settings: AppSettings) -> bool:
 
     if api_type == "anthropic":
         if getattr(settings, "connection_mode", "own_key") == "managed":
-            return bool(getattr(settings, "openswarm_auth_token", None))
+            return bool(getattr(settings, "neoswarm_auth_token", None))
         return bool(settings.anthropic_api_key)
     if api_type == "openai":
         return bool(settings.openai_api_key)
@@ -466,8 +462,8 @@ def get_context_window(
 
 COST_PER_1M_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     # (provider, model): (input_cost_per_1M, output_cost_per_1M)
-    # NOTE: `calculate_cost` is currently unused in the live path — real
-    # cost tracking comes from 9Router's usage stats (analytics.py:270+).
+    # NOTE: `calculate_cost` is currently unused in the live path —
+    # cost tracking comes from analytics.py:270+.
     # These entries are kept so the table matches BUILTIN_MODELS and can
     # be used by any future native-loop path. Subscription-routed models
     # are zero-cost to the user, but API rates are recorded here for

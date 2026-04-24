@@ -26,7 +26,7 @@ import pytest
 
 # Create a temp dir for settings/sessions
 _tmpdir = tempfile.mkdtemp()
-os.environ.setdefault("OPENSWARM_DATA_DIR", _tmpdir)
+os.environ.setdefault("NEOSWARM_DATA_DIR", _tmpdir)
 
 # Patch PostHog globally
 _captured_events: list[dict] = []
@@ -1055,8 +1055,8 @@ class TestSettingsUpdateTracking:
 
 
 class TestCostSnapshotAccuracy:
-    def test_nine_router_cost_in_heartbeat(self):
-        """Verify heartbeat includes 9Router cost data."""
+    def test_cost_in_heartbeat(self):
+        """Verify heartbeat includes cost data."""
         record(
             "app.heartbeat",
             {

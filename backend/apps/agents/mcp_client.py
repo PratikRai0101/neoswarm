@@ -1,6 +1,6 @@
 """Standalone MCP client manager for agent sessions.
 
-Replaces claude_agent_sdk's internal MCP server management.
+Manages MCP server connections for NeoSwarm agents.
 One MCPClientManager instance per agent session — manages connections
 to stdio/http/sse MCP servers, discovers tools, and routes tool calls.
 """

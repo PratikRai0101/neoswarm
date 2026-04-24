@@ -1171,13 +1171,13 @@ async def m365_device_login(tool_id: str):
         raise HTTPException(status_code=500, detail="M365 MCP server not installed")
 
     node = shutil.which("node")
-    electron = os.environ.get("OPENSWARM_ELECTRON_PATH")
-    cmd = electron or node
+    neoswarm_electron = os.environ.get("OPENSWARM_ELECTRON_PATH")  # kept for compatibility
+    cmd = neoswarm_electron or node
     if not cmd:
         raise HTTPException(status_code=500, detail="No node/electron found")
 
     env = {**os.environ, **_m365_cache_env()}
-    if electron:
+    if neoswarm_electron:
         env["ELECTRON_RUN_AS_NODE"] = "1"
 
     # Kill any existing login process for this tool

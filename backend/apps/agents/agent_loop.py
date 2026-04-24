@@ -1,4 +1,4 @@
-"""Owned agent loop — replaces claude_agent_sdk's query() function.
+"""Native agent loop for NeoSwarm.
 
 Generalizes the pattern from browser_agent.py (lines 243-334) into a
 provider-agnostic, streaming, HITL-aware tool-use loop.

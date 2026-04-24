@@ -264,7 +264,7 @@ class AgentManager:
                 )
 
             # Discord guild scoping — hard restriction. The bot may technically
-            # be in other servers (across other OpenSwarm users), but this
+            # be in other servers (across other NeoSwarm users), but this
             # specific user only authorized these guild IDs.
             if tool.name.lower() == "discord":
                 guilds = tool.oauth_tokens.get("guilds") or []
@@ -1584,7 +1584,7 @@ class AgentManager:
         )
 
     async def _run_mock_agent(self, session_id: str, prompt: str):
-        """Mock agent loop for development without claude_agent_sdk installed."""
+        """Mock agent loop for development without an API provider."""
         session = self.sessions.get(session_id)
         if not session:
             return
@@ -1764,11 +1764,10 @@ class AgentManager:
             # Cross-provider model switches force a session fork. The CLI's
             # resume transcript stores Anthropic-format content blocks with
             # Anthropic tool_use_ids; replaying them on a non-Anthropic
-            # provider via 9Router's claude→openai translator corrupts
-            # history silently (fixMissingToolResponses stubs missing tool
-            # responses with placeholder text). Forking starts a new CLI
-            # session so history is re-sent fresh in whichever format the
-            # new provider expects.
+            # provider corrupts history silently (fixMissingToolResponses
+            # stubs missing tool responses with placeholder text).
+            # Forking starts a new CLI session so history is re-sent
+            # fresh in whichever format the new provider expects.
             from backend.apps.agents.providers.registry import (
                 get_api_type as _get_api_type_for_model,
             )

@@ -885,13 +885,12 @@ async def run_browser_agent(
         resolve_aux_model,
     )
     browser_settings = load_settings()
-    # Resolve the model string to whatever the SDK / 9Router expects.
+    # Resolve the model string to whatever the API expects.
     # When the parent session is running on a non-Claude model (e.g. gpt-5.4),
-    # the browser agent inherits it and we route through 9Router's prefix.
+    # the browser agent inherits it.
     # Tool-use fidelity for browser-specific tools (BrowserNavigate, click,
-    # type, etc.) through 9Router's claude→openai translator is UNVERIFIED —
-    # if translation is poor, the user should manually switch this session
-    # back to Claude in the model picker.
+    # type, etc.) varies by provider — if translation is poor, the user
+    # should manually switch this session back to Claude in the model picker.
     if _find_builtin_model(model) is not None:
         api_model = resolve_model_id_for_sdk(model, browser_settings)
     else:
@@ -900,8 +899,7 @@ async def run_browser_agent(
             api_model, _ = await resolve_aux_model(browser_settings, preferred_tier="haiku")
         except ValueError:
             # Nothing connected at all — surface a clear error so the caller
-            # (parent agent) sees it in the tool result instead of crashing
-            # on a 400 from 9Router.
+            # (parent agent) sees it in the tool result instead of crashing.
             session.status = "error"
             error_text = (
                 "Browser agent requires an active LLM subscription. "
@@ -983,8 +981,8 @@ async def run_browser_agent(
             ))
             if response is None:
                 break
-            # Guard against empty content (e.g. upstream API error from
-            # 9Router that the SDK parsed into a partial response object).
+            # Guard against empty content (e.g. upstream API error that
+            # the SDK parsed into a partial response object).
             if not response.content:
                 logger.warning(f"Browser agent {session_id}: empty response content from {api_model}")
                 break

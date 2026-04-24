@@ -24,11 +24,11 @@ APP_VERSION = "1.0.22"
 
 _heartbeat_task: asyncio.Task | None = None
 
-# Delta tracking — tracks last-seen 9Router totals to compute increments
-_last_9r_cost: float | None = None
-_last_9r_prompt_tokens: int | None = None
-_last_9r_completion_tokens: int | None = None
-_last_9r_requests: int | None = None
+# Delta tracking — tracks last-seen totals to compute increments
+_last_cost: float | None = None
+_last_prompt_tokens: int | None = None
+_last_completion_tokens: int | None = None
+_last_requests: int | None = None
 _RESTART_THRESHOLD = 1.0
 
 
@@ -38,7 +38,7 @@ def _compute_delta(
     """Compute incremental delta from cumulative values.
 
     Returns (delta, new_last).
-    Handles 9Router restarts (large drops) and float jitter (tiny drops).
+    Handles restarts (large drops) and float jitter (tiny drops).
     """
     if last is None:
         return 0.0, current
@@ -253,7 +253,7 @@ async def usage_summary():
 
 @analytics.router.get("/cost-breakdown")
 async def cost_breakdown(period: str = "7d"):
-    """Get usage stats summary - 9Router no longer supported."""
+    """Get usage stats summary."""
     return {"available": False, "by_model": {}, "by_provider": {}}
 
 
