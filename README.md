@@ -7,7 +7,7 @@
 <p align="center">
   <strong>A cross-platform, locally-running AI agent orchestrator</strong>
   <br>
-  Built on top of OpenSwarm — with the Team Lead (Orchestrator) Agent that manages a swarm of worker agents in parallel.
+  A fork of OpenSwarm with the Team Lead (Orchestrator) Agent that manages a swarm of worker agents in parallel.
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@ Built for **Linux first**, then Windows, then macOS. Available as a **Tauri GUI*
 - **100% Local**: No data leaves your machine unless you configure cloud providers
 - **Offline-capable**: Run entirely with local Ollama models
 - **Three Interfaces**: GUI, TUI, and CLI — your choice at runtime
-- **Model-agnostic**: Anthropic, OpenAI, Gemini, OpenRouter, and Ollama support
+- **Native AgentLoop**: Replaces proprietary SDK with pure Python
 - **Cross-platform**: Linux first, then Windows, then macOS
 
 ## Key Features

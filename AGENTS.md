@@ -45,9 +45,10 @@ PYTHONPATH=. python -m uvicorn backend.main:app --host 127.0.0.1 --port 8324
 ### CLI
 ```bash
 cd cli
-python main.py --help
-python main.py models
-python main.py status
+pip install -e .
+neoswarm --help
+neoswarm models
+neoswarm status
 ```
 
 ### Native App
@@ -60,13 +61,38 @@ python main.py status
 curl http://localhost:8324/api/health/check
 ```
 
+## Architecture Notes
+
+### Provider Model
+The system uses a pluggable provider adapter pattern:
+- **Ollama** (default, fully local) — no API key needed
+- **Anthropic** — requires ANTHROPIC_API_KEY
+- **OpenAI** — requires OPENAI_API_KEY
+- **Google/Gemini** — requires GOOGLE_API_KEY
+- **OpenRouter** — requires OPENROUTER_API_KEY
+
+### Agent Loop
+The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) replaces `claude_agent_sdk`.
+It handles streaming, tool use, and HITL approvals in a provider-agnostic way.
+
+### Environment Variables
+Key env vars (formerly OPENSWARM_*):
+- `NEOSWARM_PORT` — backend port (default: 8324)
+- `NEOSWARM_PACKAGED` — set to "1" when running as Tauri app
+- `NEOSWARM_ELECTRON_PATH` — path to electron (legacy, unused)
+
+### Cache Directory
+User data: `~/.neoswarm/` (formerly `~/.openswarm/`)
+Packaged data: `~/.local/share/NeoSwarm/data/` (Linux), `~/Library/Application Support/NeoSwarm/data/` (macOS)
+
 ## Notes
 
 - Backend imports use `backend.` prefix (e.g., `from backend.config.Apps import MainApp`)
 - Run from project root with `PYTHONPATH=.`
 - Health check is at `/api/health/check` not `/health`
+- MCP server names: `neoswarm-browser-agent`, `neoswarm-invoke-agent`
 
 ---
 
 *Last updated: 2026-04-24*
-*All 5 phases complete - app is ready!*
+*All 5 phases complete — Phase 6: codebase cleanup also done*

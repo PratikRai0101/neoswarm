@@ -34,8 +34,8 @@ nvm use 22
 ## 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-org>/self-swarm.git
-cd self-swarm
+git clone https://github.com/pratikrai0101/neoswarm.git
+cd neoswarm
 ```
 
 ---
@@ -166,7 +166,7 @@ Your agents can now use Google Calendar, Gmail, Drive, etc. through MCP tools.
 ## Project structure
 
 ```
-self-swarm/
+neouswarm/
 ├── backend/
 │   ├── apps/              # FastAPI route modules
 │   │   ├── agents/        # Agent lifecycle, WebSocket, worktree management
@@ -215,8 +215,8 @@ The frontend dev server proxies `/api` requests to `http://localhost:8324`. Make
 
 ### Mock mode vs real mode
 If you see mock responses, either:
-- `claude-agent-sdk` is not installed — run `pip install claude-agent-sdk`
-- No Anthropic API key is configured — set `ANTHROPIC_API_KEY` env var or configure it in the Settings page
+- No provider is configured — set ANTHROPIC_API_KEY or use Ollama
+- Ollama is not running — start it with `ollama serve`
 
 ### `playwright install` errors
 Playwright requires browser binaries. Run `playwright install` after pip install to download them.
