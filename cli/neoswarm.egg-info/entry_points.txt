@@ -1,2 +1,2 @@
 [console_scripts]
-neoswarm = cli:main
+neoswarm = main:cli

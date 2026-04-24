@@ -1,4 +1,8 @@
+__init__.py
+__main__.py
+main.py
 setup.py
+tui.py
 neoswarm.egg-info/PKG-INFO
 neoswarm.egg-info/SOURCES.txt
 neoswarm.egg-info/dependency_links.txt
