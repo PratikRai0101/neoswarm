@@ -63,6 +63,11 @@ curl http://localhost:8324/api/health/check
 - Added TUI with Textual (rich terminal UI)
 - Created setup.py entry point
 
-## Phase 5: Packaging (Future)
-- Build AppImage for Linux
-- Package for distribution
+## Phase 5: Packaging — ✅ COMPLETE
+
+**What was done**:
+- Built Tauri v2 native app (debug binary: 224MB)
+- Added icons for Linux/Windows/macOS
+- Native desktop shell replaces Electron
+
+## Running the Native App
