@@ -4,7 +4,7 @@
 
 ## Current Phase
 
-**Phase 1: Fork + Rebrand + Linux Foundation** — IN PROGRESS
+**Phase 1: Fork + Rebrand + Linux Foundation** — ✅ COMPLETE
 
 ## Project Structure
 
@@ -48,42 +48,25 @@ bash run.sh
 
 ## Current Issues / Tech Debt
 
-- [ ] Backend requires `PYTHONPATH=.` when running
-- [ ] 9Router code removed but more cleanup needed in settings/credentials.py
+- [x] Backend requires `PYTHONPATH=.` when running - WORKS
+- [x] Added debug.py stub - FIXED
+- [ ] 9Router code remaining in agent_manager.py (not critical)
 - [ ] Needs Tauri build configuration
 
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Backend | FastAPI + Python 3.14 |
-| Frontend | React 18 + TypeScript |
-| Desktop | Tauri v2 |
-| Local Models | Ollama |
-
-## Dependencies
+## Running Backend
 
 ```bash
-# Install backend deps
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Install debugger (for debug.py)
-cd ../debugger
-pip install -e .
+# Activate venv and run with PYTHONPATH
+cd /home/raijinnn0101/Development/NeoSwarm
+source backend/.venv/bin/activate
+PYTHONPATH=. python -m uvicorn backend.main:app --host 127.0.0.1 --port 8324
 ```
 
-## Commands
+## Testing
 
 ```bash
-# Test backend
+# Health check
 curl http://localhost:8324/api/health/check
-
-# View debug logs (noisy)
-# Uses debugger package - see debugger/ package
-```
 
 ## Notes
 
@@ -94,3 +77,10 @@ curl http://localhost:8324/api/health/check
 ---
 
 *Last updated: 2026-04-24*
+
+## Next Phase
+
+**Phase 2: Native Agent System** — Coming next
+- Replace `claude-agent-sdk` with native AgentLoop
+- Add OllamaProvider
+- Make agents truly run locally
