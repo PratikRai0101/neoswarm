@@ -16,56 +16,50 @@ OPENSWARM_DEFAULT_PROXY_URL = "https://api.openswarm.ai"
 
 
 def _check_9router() -> bool:
-    """Check if 9Router is running locally."""
-    try:
-        import httpx
-        r = httpx.get("http://localhost:20128/v1/models", timeout=2.0)
-        return r.status_code == 200
-    except Exception:
-        return False
+    """Stub - 9Router no longer supported."""
+    return False
 
 
 def validate_credentials(settings: AppSettings, provider: str = "anthropic") -> None:
     """Raise ValueError if credentials are missing for the given provider.
 
-    Allows through if 9Router is running as a fallback.
-    Handles both display names ('Anthropic') and lowercase ('anthropic').
+    Supports: Anthropic, OpenAI, Gemini, OpenRouter
     """
     p = provider.lower().strip()
 
-    # 9Router or GitHub Copilot providers don't need traditional credentials
+    # These providers don't need traditional credentials (not supported)
     if p in ("9router", "github copilot", "copilot"):
-        return
-
-    # If 9Router is running, all providers are accessible
+        raise ValueError(f"Provider {provider} not supported. Set API key in Settings.")
     if _check_9router():
         return
 
     if p == "anthropic":
         if getattr(settings, "connection_mode", "own_key") == "managed":
             if not getattr(settings, "openswarm_auth_token", None):
-                raise ValueError("Open Swarm account not connected. Sign in via Settings -> API.")
+                raise ValueError(
+                    "NeoSwarm account not connected. Sign in via Settings -> API."
+                )
             return
         if settings.anthropic_api_key:
             return
-        raise ValueError("Anthropic API key not configured. Set it in Settings, or connect a subscription.")
+        raise ValueError("Anthropic API key not configured. Set it in Settings.")
     elif p == "openai":
         if settings.openai_api_key:
             return
-        raise ValueError("OpenAI API key not configured. Set it in Settings, or connect a subscription.")
+        raise ValueError("OpenAI API key not configured. Set it in Settings.")
     elif p in ("gemini", "google"):
         if getattr(settings, "google_api_key", None):
             return
-        raise ValueError("Google API key not configured. Set it in Settings, or connect a subscription.")
+        raise ValueError("Google API key not configured. Set it in Settings.")
     elif p == "openrouter":
         if getattr(settings, "openrouter_api_key", None):
             return
         raise ValueError("OpenRouter API key not configured. Set it in Settings.")
     elif p in ("xai", "meta", "deepseek", "mistral", "qwen", "cohere"):
-        # These route through OpenRouter — need either OpenRouter key or 9Router
+        # These route through OpenRouter — need OpenRouter key
         if getattr(settings, "openrouter_api_key", None):
             return
-        raise ValueError(f"{provider} requires an OpenRouter API key, or connect a subscription via 9Router.")
+        raise ValueError(f"{provider} requires an OpenRouter API key.")
     else:
         # Custom provider — check if it exists in custom_providers
         for cp in getattr(settings, "custom_providers", []):
@@ -84,7 +78,8 @@ def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, 
         if getattr(settings, "connection_mode", "own_key") == "managed":
             return {
                 "auth_token": getattr(settings, "openswarm_auth_token", "") or "",
-                "base_url": getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL,
+                "base_url": getattr(settings, "openswarm_proxy_url", None)
+                or OPENSWARM_DEFAULT_PROXY_URL,
             }
         return {"api_key": settings.anthropic_api_key or ""}
 
@@ -109,6 +104,7 @@ def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, 
 # Legacy helpers (kept for backward compat during migration)
 # ---------------------------------------------------------------------------
 
+
 def get_agent_sdk_env(settings: AppSettings) -> dict[str, str]:
     """Return the env dict for ClaudeAgentOptions based on connection mode.
 
@@ -117,7 +113,10 @@ def get_agent_sdk_env(settings: AppSettings) -> dict[str, str]:
     validate_credentials(settings, "anthropic")
 
     if getattr(settings, "connection_mode", "own_key") == "managed":
-        proxy_url = getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL
+        proxy_url = (
+            getattr(settings, "openswarm_proxy_url", None)
+            or OPENSWARM_DEFAULT_PROXY_URL
+        )
         return {
             "ANTHROPIC_AUTH_TOKEN": getattr(settings, "openswarm_auth_token", ""),
             "ANTHROPIC_BASE_URL": proxy_url,
@@ -134,7 +133,10 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
     import anthropic
 
     if getattr(settings, "connection_mode", "own_key") == "managed":
-        proxy_url = getattr(settings, "openswarm_proxy_url", None) or OPENSWARM_DEFAULT_PROXY_URL
+        proxy_url = (
+            getattr(settings, "openswarm_proxy_url", None)
+            or OPENSWARM_DEFAULT_PROXY_URL
+        )
         return anthropic.AsyncAnthropic(
             auth_token=getattr(settings, "openswarm_auth_token", None),
             base_url=proxy_url,
@@ -144,11 +146,4 @@ def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
     if settings.anthropic_api_key:
         return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-    # Fall back to 9Router subscription (free for users with Claude/ChatGPT/Gemini subscriptions)
-    if _check_9router():
-        return anthropic.AsyncAnthropic(
-            api_key="9router",
-            base_url="http://localhost:20128",
-        )
-
-    raise ValueError("No AI provider configured. Set an API key or connect a subscription.")
+    raise ValueError("No AI provider configured. Set an Anthropic API key.")
