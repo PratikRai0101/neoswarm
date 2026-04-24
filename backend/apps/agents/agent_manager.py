@@ -778,11 +778,11 @@ class AgentManager:
 
             import re as _re
 
-            bm = _re.match(r"mcp__openswarm-browser-agent__(.+)", tool_name)
+            bm = _re.match(r"mcp__neoswarm-browser-agent__(.+)", tool_name)
             if bm:
                 return _builtin_perms.get(bm.group(1), "always_allow")
 
-            im = _re.match(r"mcp__openswarm-invoke-agent__(.+)", tool_name)
+            im = _re.match(r"mcp__neoswarm-invoke-agent__(.+)", tool_name)
             if im:
                 return _builtin_perms.get(im.group(1), "always_allow")
 
@@ -1151,21 +1151,21 @@ class AgentManager:
                 browser_agent_server_path = os.path.join(
                     os.path.dirname(__file__), "browser_agent_mcp_server.py"
                 )
-                backend_port = os.environ.get("OPENSWARM_PORT", "8324")
+                backend_port = os.environ.get("NEOSWARM_PORT", "8324")
                 pre_selected_bids = self._get_pre_selected_browser_ids(
                     session.dashboard_id
                 )
-                mcp_servers["openswarm-browser-agent"] = {
+                mcp_servers["neoswarm-browser-agent"] = {
                     "command": sys.executable,
                     "args": [browser_agent_server_path],
                     "env": {
-                        "OPENSWARM_PORT": backend_port,
-                        "OPENSWARM_AGENT_MODEL": session.model,
-                        "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
-                        "OPENSWARM_PRE_SELECTED_BROWSER_IDS": ",".join(
+                        "NEOSWARM_PORT": backend_port,
+                        "NEOSWARM_AGENT_MODEL": session.model,
+                        "NEOSWARM_DASHBOARD_ID": session.dashboard_id or "",
+                        "NEOSWARM_PRE_SELECTED_BROWSER_IDS": ",".join(
                             pre_selected_bids
                         ),
-                        "OPENSWARM_PARENT_SESSION_ID": session.id,
+                        "NEOSWARM_PARENT_SESSION_ID": session.id,
                     },
                     "type": "stdio",
                 }
@@ -1180,14 +1180,14 @@ class AgentManager:
                 invoke_agent_server_path = os.path.join(
                     os.path.dirname(__file__), "invoke_agent_mcp_server.py"
                 )
-                backend_port = os.environ.get("OPENSWARM_PORT", "8324")
-                mcp_servers["openswarm-invoke-agent"] = {
+                backend_port = os.environ.get("NEOSWARM_PORT", "8324")
+                mcp_servers["neoswarm-invoke-agent"] = {
                     "command": sys.executable,
                     "args": [invoke_agent_server_path],
                     "env": {
-                        "OPENSWARM_PORT": backend_port,
-                        "OPENSWARM_PARENT_SESSION_ID": session.id,
-                        "OPENSWARM_DASHBOARD_ID": session.dashboard_id or "",
+                        "NEOSWARM_PORT": backend_port,
+                        "NEOSWARM_PARENT_SESSION_ID": session.id,
+                        "NEOSWARM_DASHBOARD_ID": session.dashboard_id or "",
                     },
                     "type": "stdio",
                 }
@@ -1206,29 +1206,29 @@ class AgentManager:
             if mcp_servers:
                 all_tools_list = load_all_tools()
                 for name in mcp_servers:
-                    if name == "openswarm-browser-agent":
+                    if name == "neoswarm-browser-agent":
                         for bt in _browser_delegation_tools:
                             policy = _builtin_perms.get(bt, "always_allow")
                             if policy == "always_allow":
                                 effective_allowed.append(
-                                    f"mcp__openswarm-browser-agent__{bt}"
+                                    f"mcp__neoswarm-browser-agent__{bt}"
                                 )
                             elif policy == "deny":
                                 effective_disallowed.append(
-                                    f"mcp__openswarm-browser-agent__{bt}"
+                                    f"mcp__neoswarm-browser-agent__{bt}"
                                 )
                         continue
 
-                    if name == "openswarm-invoke-agent":
+                    if name == "neoswarm-invoke-agent":
                         for it in _invoke_agent_tools:
                             policy = _builtin_perms.get(it, "always_allow")
                             if policy == "always_allow":
                                 effective_allowed.append(
-                                    f"mcp__openswarm-invoke-agent__{it}"
+                                    f"mcp__neoswarm-invoke-agent__{it}"
                                 )
                             elif policy == "deny":
                                 effective_disallowed.append(
-                                    f"mcp__openswarm-invoke-agent__{it}"
+                                    f"mcp__neoswarm-invoke-agent__{it}"
                                 )
                         continue
 

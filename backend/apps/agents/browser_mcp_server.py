@@ -3,7 +3,7 @@
 Minimal stdio MCP server that exposes browser interaction tools.
 
 Launched as a subprocess by the Claude Agent SDK. Proxies tool calls
-to the OpenSwarm backend via HTTP, which bridges them to the Electron
+to the NeoSwarm backend via HTTP, which bridges them to the Tauri
 frontend via WebSocket where the actual webview lives.
 """
 
@@ -17,11 +17,12 @@ from io import BytesIO
 
 try:
     from PIL import Image
+
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
 
-BACKEND_PORT = os.environ.get("OPENSWARM_PORT", "8324")
+BACKEND_PORT = os.environ.get("NEOSWARM_PORT", "8324")
 BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/browser/command"
 
 TAB_ID_PROP = {
@@ -254,13 +255,17 @@ def send_notification(method, params=None):
     sys.stdout.flush()
 
 
-def call_backend(action: str, browser_id: str, params: dict | None = None, tab_id: str = "") -> dict:
-    payload = json.dumps({
-        "action": action,
-        "browser_id": browser_id,
-        "tab_id": tab_id,
-        "params": params or {},
-    }).encode()
+def call_backend(
+    action: str, browser_id: str, params: dict | None = None, tab_id: str = ""
+) -> dict:
+    payload = json.dumps(
+        {
+            "action": action,
+            "browser_id": browser_id,
+            "tab_id": tab_id,
+            "params": params or {},
+        }
+    ).encode()
     req = urllib.request.Request(
         BACKEND_URL,
         data=payload,
@@ -302,7 +307,10 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
     browser_id = arguments.get("browser_id", "")
     tab_id = arguments.get("tab_id", "")
     if not browser_id:
-        return {"content": [{"type": "text", "text": "Error: browser_id is required"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": "Error: browser_id is required"}],
+            "isError": True,
+        }
 
     action_map = {
         "BrowserScreenshot": "screenshot",
@@ -317,13 +325,19 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
     }
     action = action_map.get(tool_name)
     if not action:
-        return {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
+            "isError": True,
+        }
 
     params = {k: v for k, v in arguments.items() if k not in ("browser_id", "tab_id")}
     result = call_backend(action, browser_id, params, tab_id=tab_id)
 
     if "error" in result:
-        return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": f"Error: {result['error']}"}],
+            "isError": True,
+        }
 
     if action == "screenshot" and result.get("image"):
         image_data = result["image"]
@@ -337,18 +351,24 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         if len(image_data) > MAX_IMAGE_B64_BYTES:
             return {
                 "content": [
-                    {"type": "text", "text": (
-                        f"Screenshot too large to return ({len(image_data)} bytes base64). "
-                        f"URL: {result.get('url', 'unknown')}. "
-                        "Use BrowserGetText to read the page content instead."
-                    )},
+                    {
+                        "type": "text",
+                        "text": (
+                            f"Screenshot too large to return ({len(image_data)} bytes base64). "
+                            f"URL: {result.get('url', 'unknown')}. "
+                            "Use BrowserGetText to read the page content instead."
+                        ),
+                    },
                 ],
             }
 
         return {
             "content": [
                 {"type": "image", "data": image_data, "mimeType": mime_type},
-                {"type": "text", "text": f"Screenshot captured. URL: {result.get('url', 'unknown')}"},
+                {
+                    "type": "text",
+                    "text": f"Screenshot captured. URL: {result.get('url', 'unknown')}",
+                },
             ],
         }
 
@@ -371,14 +391,17 @@ def main():
         params = msg.get("params", {})
 
         if method == "initialize":
-            send_response(id_, {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {
-                    "name": "openswarm-browser",
-                    "version": "1.0.0",
+            send_response(
+                id_,
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {
+                        "name": "neoswarm-browser",
+                        "version": "1.0.0",
+                    },
                 },
-            })
+            )
         elif method == "notifications/initialized":
             pass
         elif method == "tools/list":
@@ -391,7 +414,9 @@ def main():
         elif method == "ping":
             send_response(id_, {})
         elif id_ is not None:
-            send_response(id_, error={"code": -32601, "message": f"Method not found: {method}"})
+            send_response(
+                id_, error={"code": -32601, "message": f"Method not found: {method}"}
+            )
 
 
 if __name__ == "__main__":

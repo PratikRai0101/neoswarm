@@ -33,11 +33,13 @@ _captured_events: list[dict] = []
 
 
 def _mock_capture(event_type, distinct_id, properties=None):
-    _captured_events.append({
-        "event": event_type,
-        "distinct_id": distinct_id,
-        "properties": properties or {},
-    })
+    _captured_events.append(
+        {
+            "event": event_type,
+            "distinct_id": distinct_id,
+            "properties": properties or {},
+        }
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +56,7 @@ def mock_posthog():
     mock_ph.capture = _mock_capture
 
     import backend.apps.analytics.collector as collector
+
     old_ph = collector._posthog
     old_id = collector._installation_id
     collector._posthog = mock_ph
@@ -67,12 +70,17 @@ def mock_posthog():
 def mock_settings(tmp_path):
     """Mock settings to avoid reading real config."""
     settings_file = tmp_path / "settings.json"
-    settings_file.write_text(json.dumps({
-        "analytics_opt_in": True,
-        "installation_id": "test-install-id",
-    }))
+    settings_file.write_text(
+        json.dumps(
+            {
+                "analytics_opt_in": True,
+                "installation_id": "test-install-id",
+            }
+        )
+    )
 
     import backend.apps.settings.settings as settings_mod
+
     old_file = settings_mod.SETTINGS_FILE
     settings_mod.SETTINGS_FILE = str(settings_file)
     yield
@@ -86,6 +94,7 @@ def mock_sessions_dir(tmp_path):
     sessions_dir.mkdir()
 
     import backend.config.paths as paths_mod
+
     old_dir = paths_mod.SESSIONS_DIR
     paths_mod.SESSIONS_DIR = str(sessions_dir)
     yield str(sessions_dir)
@@ -102,7 +111,9 @@ def events(event_type: str | None = None) -> list[dict]:
 def last_event(event_type: str) -> dict:
     """Return the last captured event of a given type."""
     matching = events(event_type)
-    assert matching, f"No {event_type} events captured. Got: {[e['event'] for e in _captured_events]}"
+    assert matching, (
+        f"No {event_type} events captured. Got: {[e['event'] for e in _captured_events]}"
+    )
     return matching[-1]
 
 
@@ -110,7 +121,12 @@ def last_event(event_type: str) -> dict:
 # Import application modules (after patches are set up)
 # ===========================================================================
 from backend.apps.analytics.collector import record
-from backend.apps.agents.models import AgentConfig, AgentSession, Message, ApprovalRequest
+from backend.apps.agents.models import (
+    AgentConfig,
+    AgentSession,
+    Message,
+    ApprovalRequest,
+)
 from backend.apps.agents.agent_manager import AgentManager
 
 
@@ -124,6 +140,7 @@ def manager():
 # ===========================================================================
 # 1. record() basics
 # ===========================================================================
+
 
 class TestRecordBasics:
     def test_record_sends_event(self):
@@ -153,10 +170,13 @@ class TestRecordBasics:
 # 2. session.started fires ONCE on launch
 # ===========================================================================
 
+
 class TestSessionStarted:
     @pytest.mark.asyncio
     async def test_session_started_fires_on_launch(self, manager):
-        config = AgentConfig(name="Test", model="sonnet", mode="agent", provider="anthropic")
+        config = AgentConfig(
+            name="Test", model="sonnet", mode="agent", provider="anthropic"
+        )
         session = await manager.launch_agent(config)
 
         e = last_event("session.started")
@@ -178,6 +198,7 @@ class TestSessionStarted:
 # ===========================================================================
 # 3. session.completed fires ONCE on close (NOT per message)
 # ===========================================================================
+
 
 class TestSessionCompleted:
     @pytest.mark.asyncio
@@ -223,8 +244,11 @@ class TestSessionCompleted:
 
         # Create child session
         child = AgentSession(
-            id=uuid4().hex, name="Child", mode="browser-agent",
-            parent_session_id=parent.id, status="completed",
+            id=uuid4().hex,
+            name="Child",
+            mode="browser-agent",
+            parent_session_id=parent.id,
+            status="completed",
         )
         manager.sessions[child.id] = child
 
@@ -251,15 +275,20 @@ class TestSessionCompleted:
 # 4. session.error
 # ===========================================================================
 
+
 class TestSessionError:
     def test_session_error_event_structure(self):
-        record("session.error", {
-            "error_type": "ValueError",
-            "error_message": "test error",
-            "model": "sonnet",
-            "provider": "anthropic",
-            "mode": "agent",
-        }, session_id="s1")
+        record(
+            "session.error",
+            {
+                "error_type": "ValueError",
+                "error_message": "test error",
+                "model": "sonnet",
+                "provider": "anthropic",
+                "mode": "agent",
+            },
+            session_id="s1",
+        )
 
         e = last_event("session.error")
         assert e["properties"]["error_type"] == "ValueError"
@@ -271,18 +300,23 @@ class TestSessionError:
 # 5. tool.executed
 # ===========================================================================
 
+
 class TestToolExecuted:
     def test_builtin_tool(self):
-        record("tool.executed", {
-            "tool_name": "Bash",
-            "tool_short_name": "Bash",
-            "tool_type": "builtin",
-            "mcp_server": "",
-            "duration_ms": 150,
-            "success": True,
-            "model": "sonnet",
-            "provider": "anthropic",
-        }, session_id="s1")
+        record(
+            "tool.executed",
+            {
+                "tool_name": "Bash",
+                "tool_short_name": "Bash",
+                "tool_type": "builtin",
+                "mcp_server": "",
+                "duration_ms": 150,
+                "success": True,
+                "model": "sonnet",
+                "provider": "anthropic",
+            },
+            session_id="s1",
+        )
 
         e = last_event("tool.executed")
         assert e["properties"]["tool_type"] == "builtin"
@@ -290,16 +324,20 @@ class TestToolExecuted:
         assert e["properties"]["tool_short_name"] == "Bash"
 
     def test_mcp_tool_extracts_server_name(self):
-        record("tool.executed", {
-            "tool_name": "mcp__google-workspace__searchGmail",
-            "tool_short_name": "searchGmail",
-            "tool_type": "mcp",
-            "mcp_server": "google-workspace",
-            "duration_ms": 2000,
-            "success": True,
-            "model": "sonnet",
-            "provider": "anthropic",
-        }, session_id="s1")
+        record(
+            "tool.executed",
+            {
+                "tool_name": "mcp__google-workspace__searchGmail",
+                "tool_short_name": "searchGmail",
+                "tool_type": "mcp",
+                "mcp_server": "google-workspace",
+                "duration_ms": 2000,
+                "success": True,
+                "model": "sonnet",
+                "provider": "anthropic",
+            },
+            session_id="s1",
+        )
 
         e = last_event("tool.executed")
         assert e["properties"]["tool_type"] == "mcp"
@@ -307,16 +345,20 @@ class TestToolExecuted:
         assert e["properties"]["tool_short_name"] == "searchGmail"
 
     def test_tool_failure_tracked(self):
-        record("tool.executed", {
-            "tool_name": "Bash",
-            "tool_short_name": "Bash",
-            "tool_type": "builtin",
-            "mcp_server": "",
-            "duration_ms": 50,
-            "success": False,
-            "model": "sonnet",
-            "provider": "anthropic",
-        }, session_id="s1")
+        record(
+            "tool.executed",
+            {
+                "tool_name": "Bash",
+                "tool_short_name": "Bash",
+                "tool_type": "builtin",
+                "mcp_server": "",
+                "duration_ms": 50,
+                "success": False,
+                "model": "sonnet",
+                "provider": "anthropic",
+            },
+            session_id="s1",
+        )
 
         e = last_event("tool.executed")
         assert e["properties"]["success"] is False
@@ -326,26 +368,35 @@ class TestToolExecuted:
 # 6. approval.requested + approval.resolved
 # ===========================================================================
 
+
 class TestApprovalEvents:
     def test_approval_requested(self):
-        record("approval.requested", {
-            "tool_name": "Bash",
-            "is_first_approval_in_session": True,
-            "model": "sonnet",
-        }, session_id="s1")
+        record(
+            "approval.requested",
+            {
+                "tool_name": "Bash",
+                "is_first_approval_in_session": True,
+                "model": "sonnet",
+            },
+            session_id="s1",
+        )
 
         e = last_event("approval.requested")
         assert e["properties"]["tool_name"] == "Bash"
         assert e["properties"]["is_first_approval_in_session"] is True
 
     def test_approval_resolved_allow(self):
-        record("approval.resolved", {
-            "tool_name": "Bash",
-            "decision": "allow",
-            "latency_ms": 1500,
-            "input_was_modified": False,
-            "model": "sonnet",
-        }, session_id="s1")
+        record(
+            "approval.resolved",
+            {
+                "tool_name": "Bash",
+                "decision": "allow",
+                "latency_ms": 1500,
+                "input_was_modified": False,
+                "model": "sonnet",
+            },
+            session_id="s1",
+        )
 
         e = last_event("approval.resolved")
         assert e["properties"]["decision"] == "allow"
@@ -353,25 +404,33 @@ class TestApprovalEvents:
         assert e["properties"]["input_was_modified"] is False
 
     def test_approval_resolved_deny(self):
-        record("approval.resolved", {
-            "tool_name": "Bash",
-            "decision": "deny",
-            "latency_ms": 500,
-            "input_was_modified": False,
-            "model": "sonnet",
-        }, session_id="s1")
+        record(
+            "approval.resolved",
+            {
+                "tool_name": "Bash",
+                "decision": "deny",
+                "latency_ms": 500,
+                "input_was_modified": False,
+                "model": "sonnet",
+            },
+            session_id="s1",
+        )
 
         e = last_event("approval.resolved")
         assert e["properties"]["decision"] == "deny"
 
     def test_approval_with_modified_input(self):
-        record("approval.resolved", {
-            "tool_name": "Bash",
-            "decision": "allow",
-            "latency_ms": 3000,
-            "input_was_modified": True,
-            "model": "sonnet",
-        }, session_id="s1")
+        record(
+            "approval.resolved",
+            {
+                "tool_name": "Bash",
+                "decision": "allow",
+                "latency_ms": 3000,
+                "input_was_modified": True,
+                "model": "sonnet",
+            },
+            session_id="s1",
+        )
 
         e = last_event("approval.resolved")
         assert e["properties"]["input_was_modified"] is True
@@ -381,13 +440,18 @@ class TestApprovalEvents:
 # 7. turn.completed
 # ===========================================================================
 
+
 class TestTurnCompleted:
     def test_turn_completed(self):
-        record("turn.completed", {
-            "turn_number": 3,
-            "tool_calls_in_turn": 2,
-            "model": "sonnet",
-        }, session_id="s1")
+        record(
+            "turn.completed",
+            {
+                "turn_number": 3,
+                "tool_calls_in_turn": 2,
+                "model": "sonnet",
+            },
+            session_id="s1",
+        )
 
         e = last_event("turn.completed")
         assert e["properties"]["turn_number"] == 3
@@ -397,6 +461,7 @@ class TestTurnCompleted:
 # ===========================================================================
 # 8. model.switched
 # ===========================================================================
+
 
 class TestModelSwitched:
     @pytest.mark.asyncio
@@ -408,14 +473,18 @@ class TestModelSwitched:
 
         # Simulate model switch via send_message (which we can't fully run
         # without SDK, so test the record call directly)
-        record("model.switched", {
-            "from_model": "sonnet",
-            "to_model": "opus",
-            "from_provider": "anthropic",
-            "to_provider": "anthropic",
-            "message_number": 1,
-            "cost_so_far": 0.03,
-        }, session_id=session.id)
+        record(
+            "model.switched",
+            {
+                "from_model": "sonnet",
+                "to_model": "opus",
+                "from_provider": "anthropic",
+                "to_provider": "anthropic",
+                "message_number": 1,
+                "cost_so_far": 0.03,
+            },
+            session_id=session.id,
+        )
 
         e = last_event("model.switched")
         assert e["properties"]["from_model"] == "sonnet"
@@ -426,6 +495,7 @@ class TestModelSwitched:
 # ===========================================================================
 # 9. session.resumed
 # ===========================================================================
+
 
 class TestSessionResumed:
     @pytest.mark.asyncio
@@ -454,15 +524,20 @@ class TestSessionResumed:
 # 10. context.attached
 # ===========================================================================
 
+
 class TestContextAttached:
     def test_context_with_files(self):
-        record("context.attached", {
-            "file_count": 3,
-            "directory_count": 1,
-            "skill_count": 0,
-            "image_count": 2,
-            "has_forced_tools": True,
-        }, session_id="s1")
+        record(
+            "context.attached",
+            {
+                "file_count": 3,
+                "directory_count": 1,
+                "skill_count": 0,
+                "image_count": 2,
+                "has_forced_tools": True,
+            },
+            session_id="s1",
+        )
 
         e = last_event("context.attached")
         assert e["properties"]["file_count"] == 3
@@ -474,16 +549,21 @@ class TestContextAttached:
 # 11. session.first_message
 # ===========================================================================
 
+
 class TestSessionFirstMessage:
     def test_first_message_properties(self):
         prompt = "```python\nprint('hello')\n```\nCheck https://example.com"
-        record("session.first_message", {
-            "message_length": len(prompt),
-            "has_code_block": "```" in prompt,
-            "has_url": "http://" in prompt or "https://" in prompt,
-            "model": "sonnet",
-            "mode": "agent",
-        }, session_id="s1")
+        record(
+            "session.first_message",
+            {
+                "message_length": len(prompt),
+                "has_code_block": "```" in prompt,
+                "has_url": "http://" in prompt or "https://" in prompt,
+                "model": "sonnet",
+                "mode": "agent",
+            },
+            session_id="s1",
+        )
 
         e = last_event("session.first_message")
         assert e["properties"]["has_code_block"] is True
@@ -495,52 +575,67 @@ class TestSessionFirstMessage:
 # 12. feature.used (all variants)
 # ===========================================================================
 
+
 class TestFeatureUsed:
-    @pytest.mark.parametrize("feature", [
-        "message.branched",
-        "mode.switched",
-        "skill.used",
-        "skill.created",
-        "template.created",
-        "template.used",
-        "view.created",
-        "vibe_code.used",
-        "browser_agent.launched",
-    ])
+    @pytest.mark.parametrize(
+        "feature",
+        [
+            "message.branched",
+            "mode.switched",
+            "skill.used",
+            "skill.created",
+            "template.created",
+            "template.used",
+            "view.created",
+            "vibe_code.used",
+            "browser_agent.launched",
+        ],
+    )
     def test_feature_used_variants(self, feature):
         record("feature.used", {"feature": feature}, session_id="s1")
         e = last_event("feature.used")
         assert e["properties"]["feature"] == feature
 
     def test_branch_created_with_depth(self):
-        record("feature.used", {
-            "feature": "message.branched",
-            "branch_depth": 2,
-            "total_branches_in_session": 3,
-            "messages_before_fork": 5,
-        }, session_id="s1")
+        record(
+            "feature.used",
+            {
+                "feature": "message.branched",
+                "branch_depth": 2,
+                "total_branches_in_session": 3,
+                "messages_before_fork": 5,
+            },
+            session_id="s1",
+        )
 
         e = last_event("feature.used")
         assert e["properties"]["branch_depth"] == 2
         assert e["properties"]["total_branches_in_session"] == 3
 
     def test_mode_switch_details(self):
-        record("feature.used", {
-            "feature": "mode.switched",
-            "from_mode": "agent",
-            "to_mode": "view-builder",
-        }, session_id="s1")
+        record(
+            "feature.used",
+            {
+                "feature": "mode.switched",
+                "from_mode": "agent",
+                "to_mode": "view-builder",
+            },
+            session_id="s1",
+        )
 
         e = last_event("feature.used")
         assert e["properties"]["from_mode"] == "agent"
         assert e["properties"]["to_mode"] == "view-builder"
 
     def test_browser_agent_with_task_count(self):
-        record("feature.used", {
-            "feature": "browser_agent.launched",
-            "task_count": 3,
-            "model": "sonnet",
-        })
+        record(
+            "feature.used",
+            {
+                "feature": "browser_agent.launched",
+                "task_count": 3,
+                "model": "sonnet",
+            },
+        )
 
         e = last_event("feature.used")
         assert e["properties"]["task_count"] == 3
@@ -549,6 +644,7 @@ class TestFeatureUsed:
 # ===========================================================================
 # 13. subscription events
 # ===========================================================================
+
 
 class TestSubscriptionEvents:
     def test_subscription_connected(self):
@@ -566,39 +662,57 @@ class TestSubscriptionEvents:
 # 14. provider.configured + settings.changed
 # ===========================================================================
 
+
 class TestSettingsEvents:
     def test_provider_added(self):
-        record("provider.configured", {
-            "provider": "anthropic",
-            "action": "added",
-        })
+        record(
+            "provider.configured",
+            {
+                "provider": "anthropic",
+                "action": "added",
+            },
+        )
         e = last_event("provider.configured")
         assert e["properties"]["action"] == "added"
 
     def test_provider_removed(self):
-        record("provider.configured", {
-            "provider": "openai",
-            "action": "removed",
-        })
+        record(
+            "provider.configured",
+            {
+                "provider": "openai",
+                "action": "removed",
+            },
+        )
         e = last_event("provider.configured")
         assert e["properties"]["action"] == "removed"
 
     def test_settings_changed(self):
-        record("settings.changed", {
-            "changed_keys": ["theme", "default_model", "zoom_sensitivity"],
-        })
+        record(
+            "settings.changed",
+            {
+                "changed_keys": ["theme", "default_model", "zoom_sensitivity"],
+            },
+        )
         e = last_event("settings.changed")
         assert "theme" in e["properties"]["changed_keys"]
         assert len(e["properties"]["changed_keys"]) == 3
 
     def test_settings_changed_excludes_secrets(self):
         # Verify that if we track changed keys, secret keys are excluded
-        record("settings.changed", {
-            "changed_keys": ["theme"],
-        })
+        record(
+            "settings.changed",
+            {
+                "changed_keys": ["theme"],
+            },
+        )
         e = last_event("settings.changed")
-        for secret in ["anthropic_api_key", "openai_api_key", "google_api_key",
-                        "openrouter_api_key", "copilot_github_token"]:
+        for secret in [
+            "anthropic_api_key",
+            "openai_api_key",
+            "google_api_key",
+            "openrouter_api_key",
+            "copilot_github_token",
+        ]:
             assert secret not in e["properties"]["changed_keys"]
 
 
@@ -606,14 +720,18 @@ class TestSettingsEvents:
 # 15. cost.snapshot
 # ===========================================================================
 
+
 class TestCostSnapshot:
     def test_cost_snapshot_structure(self):
-        record("cost.snapshot", {
-            "total_cost_usd": 42.50,
-            "total_prompt_tokens": 500000,
-            "total_completion_tokens": 150000,
-            "total_requests": 250,
-        })
+        record(
+            "cost.snapshot",
+            {
+                "total_cost_usd": 42.50,
+                "total_prompt_tokens": 500000,
+                "total_completion_tokens": 150000,
+                "total_requests": 250,
+            },
+        )
 
         e = last_event("cost.snapshot")
         assert e["properties"]["total_cost_usd"] == 42.50
@@ -626,15 +744,19 @@ class TestCostSnapshot:
 # 16. app.heartbeat
 # ===========================================================================
 
+
 class TestAppHeartbeat:
     def test_heartbeat_structure(self):
-        record("app.heartbeat", {
-            "active_session_count": 3,
-            "nine_router_total_cost": 100.50,
-            "nine_router_total_prompt_tokens": 1000000,
-            "nine_router_total_completion_tokens": 300000,
-            "nine_router_total_requests": 500,
-        })
+        record(
+            "app.heartbeat",
+            {
+                "active_session_count": 3,
+                "nine_router_total_cost": 100.50,
+                "nine_router_total_prompt_tokens": 1000000,
+                "nine_router_total_completion_tokens": 300000,
+                "nine_router_total_requests": 500,
+            },
+        )
 
         e = last_event("app.heartbeat")
         assert e["properties"]["active_session_count"] == 3
@@ -645,17 +767,21 @@ class TestAppHeartbeat:
 # 17. app.opened (enhanced)
 # ===========================================================================
 
+
 class TestAppOpened:
     def test_app_opened_structure(self):
-        record("app.opened", {
-            "os": "Darwin",
-            "platform": "macOS-14.0",
-            "provider_count": 2,
-            "providers": ["anthropic", "openai"],
-            "is_first_open": False,
-            "days_since_install": 5,
-            "app_version": "1.0.17",
-        })
+        record(
+            "app.opened",
+            {
+                "os": "Darwin",
+                "platform": "macOS-14.0",
+                "provider_count": 2,
+                "providers": ["anthropic", "openai"],
+                "is_first_open": False,
+                "days_since_install": 5,
+                "app_version": "1.0.17",
+            },
+        )
 
         e = last_event("app.opened")
         assert e["properties"]["is_first_open"] is False
@@ -667,6 +793,7 @@ class TestAppOpened:
 # ===========================================================================
 # 18. Multi-message session does NOT fire session.completed multiple times
 # ===========================================================================
+
 
 class TestMultiMessageSession:
     @pytest.mark.asyncio
@@ -683,19 +810,24 @@ class TestMultiMessageSession:
 
         # At this point, no session.completed should have fired
         completed = events("session.completed")
-        assert len(completed) == 0, f"session.completed fired {len(completed)} times before close!"
+        assert len(completed) == 0, (
+            f"session.completed fired {len(completed)} times before close!"
+        )
 
         # Now close — exactly 1 session.completed
         session.status = "completed"
         await manager.close_session(session.id)
 
         completed = events("session.completed")
-        assert len(completed) == 1, f"Expected 1 session.completed, got {len(completed)}"
+        assert len(completed) == 1, (
+            f"Expected 1 session.completed, got {len(completed)}"
+        )
 
 
 # ===========================================================================
 # 19. Token tracking
 # ===========================================================================
+
 
 class TestTokenTracking:
     @pytest.mark.asyncio
@@ -720,6 +852,7 @@ class TestTokenTracking:
 # 20. Full lifecycle integration test
 # ===========================================================================
 
+
 class TestFullLifecycle:
     @pytest.mark.asyncio
     async def test_complete_session_lifecycle(self, manager):
@@ -738,14 +871,22 @@ class TestFullLifecycle:
         # 2. Simulate messages
         session.messages.append(Message(role="user", content="Hello, help me code"))
         session.messages.append(Message(role="assistant", content="Sure, let me help"))
-        session.messages.append(Message(
-            role="tool_call",
-            content={"tool": "Bash", "input": {"command": "ls"}},
-        ))
-        session.messages.append(Message(
-            role="tool_result",
-            content={"text": "file1.py\nfile2.py", "tool_name": "Bash", "elapsed_ms": 50},
-        ))
+        session.messages.append(
+            Message(
+                role="tool_call",
+                content={"tool": "Bash", "input": {"command": "ls"}},
+            )
+        )
+        session.messages.append(
+            Message(
+                role="tool_result",
+                content={
+                    "text": "file1.py\nfile2.py",
+                    "tool_name": "Bash",
+                    "elapsed_ms": 50,
+                },
+            )
+        )
         session.messages.append(Message(role="user", content="Now run tests"))
         session.messages.append(Message(role="assistant", content="Running tests..."))
 
@@ -791,8 +932,13 @@ class TestFullLifecycle:
 
         # Simulate branching
         from backend.apps.agents.models import MessageBranch
-        session.branches["branch-1"] = MessageBranch(id="branch-1", parent_branch_id="main")
-        session.branches["branch-2"] = MessageBranch(id="branch-2", parent_branch_id="branch-1")
+
+        session.branches["branch-1"] = MessageBranch(
+            id="branch-1", parent_branch_id="main"
+        )
+        session.branches["branch-2"] = MessageBranch(
+            id="branch-2", parent_branch_id="branch-1"
+        )
 
         session.status = "completed"
         await manager.close_session(session.id)
@@ -805,10 +951,12 @@ class TestFullLifecycle:
 # 21. MCP server name extraction in tool.executed
 # ===========================================================================
 
+
 class TestMCPServerExtraction:
     def test_standard_mcp_format(self):
         """Test mcp__server-name__tool_name format."""
         import re
+
         tool_name = "mcp__google-workspace__searchGmail"
         m = re.match(r"mcp__([^_]+(?:-[^_]+)*)__(.+)", tool_name)
         assert m is not None
@@ -817,22 +965,25 @@ class TestMCPServerExtraction:
 
     def test_builtin_tool_no_server(self):
         import re
+
         tool_name = "Bash"
         m = re.match(r"mcp__([^_]+(?:-[^_]+)*)__(.+)", tool_name)
         assert m is None
 
     def test_browser_agent_mcp_format(self):
         import re
-        tool_name = "mcp__openswarm-browser-agent__CreateBrowserAgent"
+
+        tool_name = "mcp__neoswarm-browser-agent__CreateBrowserAgent"
         m = re.match(r"mcp__([^_]+(?:-[^_]+)*)__(.+)", tool_name)
         assert m is not None
-        assert m.group(1) == "openswarm-browser-agent"
+        assert m.group(1) == "neoswarm-browser-agent"
         assert m.group(2) == "CreateBrowserAgent"
 
 
 # ===========================================================================
 # 22. Settings update tracking
 # ===========================================================================
+
 
 class TestSettingsUpdateTracking:
     @pytest.mark.asyncio
@@ -854,10 +1005,13 @@ class TestSettingsUpdateTracking:
             old_val = bool(getattr(old, key, None))
             new_val = bool(getattr(new, key, None))
             if old_val != new_val:
-                record("provider.configured", {
-                    "provider": provider_name,
-                    "action": "added" if new_val else "removed",
-                })
+                record(
+                    "provider.configured",
+                    {
+                        "provider": provider_name,
+                        "action": "added" if new_val else "removed",
+                    },
+                )
 
         e = last_event("provider.configured")
         assert e["properties"]["provider"] == "anthropic"
@@ -873,12 +1027,21 @@ class TestSettingsUpdateTracking:
 
         old_dict = old.model_dump()
         new_dict = new.model_dump()
-        secret_keys = {"anthropic_api_key", "openai_api_key", "google_api_key",
-                        "openrouter_api_key", "claude_subscription_token",
-                        "openai_subscription_token", "gemini_subscription_token",
-                        "copilot_github_token", "copilot_token", "installation_id"}
+        secret_keys = {
+            "anthropic_api_key",
+            "openai_api_key",
+            "google_api_key",
+            "openrouter_api_key",
+            "claude_subscription_token",
+            "openai_subscription_token",
+            "gemini_subscription_token",
+            "copilot_github_token",
+            "copilot_token",
+            "installation_id",
+        }
         safe_changed = [
-            k for k in new_dict
+            k
+            for k in new_dict
             if k in old_dict and new_dict[k] != old_dict[k] and k not in secret_keys
         ]
 
@@ -890,18 +1053,22 @@ class TestSettingsUpdateTracking:
 # 23. Cost snapshot accuracy
 # ===========================================================================
 
+
 class TestCostSnapshotAccuracy:
     def test_nine_router_cost_in_heartbeat(self):
         """Verify heartbeat includes 9Router cost data."""
-        record("app.heartbeat", {
-            "active_session_count": 2,
-            "nine_router_total_cost": 235.50,
-            "nine_router_total_prompt_tokens": 5000000,
-            "nine_router_total_completion_tokens": 1500000,
-            "nine_router_total_requests": 1200,
-            "cost_model_claude_sonnet_4_20250514": 180.00,
-            "cost_model_claude_opus_4_20250514": 55.50,
-        })
+        record(
+            "app.heartbeat",
+            {
+                "active_session_count": 2,
+                "nine_router_total_cost": 235.50,
+                "nine_router_total_prompt_tokens": 5000000,
+                "nine_router_total_completion_tokens": 1500000,
+                "nine_router_total_requests": 1200,
+                "cost_model_claude_sonnet_4_20250514": 180.00,
+                "cost_model_claude_opus_4_20250514": 55.50,
+            },
+        )
 
         e = last_event("app.heartbeat")
         assert e["properties"]["nine_router_total_cost"] == 235.50
@@ -909,12 +1076,15 @@ class TestCostSnapshotAccuracy:
 
     def test_cost_snapshot_separate_event(self):
         """Verify cost.snapshot fires independently with accurate totals."""
-        record("cost.snapshot", {
-            "total_cost_usd": 235.50,
-            "total_prompt_tokens": 5000000,
-            "total_completion_tokens": 1500000,
-            "total_requests": 1200,
-        })
+        record(
+            "cost.snapshot",
+            {
+                "total_cost_usd": 235.50,
+                "total_prompt_tokens": 5000000,
+                "total_completion_tokens": 1500000,
+                "total_requests": 1200,
+            },
+        )
 
         e = last_event("cost.snapshot")
         assert e["properties"]["total_cost_usd"] == 235.50
@@ -923,6 +1093,7 @@ class TestCostSnapshotAccuracy:
 # ===========================================================================
 # 24. Edge cases
 # ===========================================================================
+
 
 class TestEdgeCases:
     @pytest.mark.asyncio
@@ -956,6 +1127,7 @@ class TestEdgeCases:
     def test_record_with_no_posthog(self):
         """record() should not crash if PostHog is not initialized."""
         import backend.apps.analytics.collector as collector
+
         old_ph = collector._posthog
         collector._posthog = None
 

@@ -1,9 +1,9 @@
-"""Centralised path definitions for the OpenSwarm backend.
+"""Centralised path definitions for the NeoSwarm backend.
 
 In dev mode (default) data lives under ``backend/data/``.
-When packaged as a desktop app, Electron sets ``OPENSWARM_PACKAGED=1`` and
+When packaged as a desktop app, Tauri sets ``NEOSWARM_PACKAGED=1`` and
 data is stored in a platform-appropriate location
-(``~/Library/Application Support/OpenSwarm/data/`` on macOS).
+(``~/Library/Application Support/NeoSwarm/data/`` on macOS).
 """
 
 import os
@@ -11,15 +11,25 @@ import sys
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-_is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+_is_packaged = os.environ.get("NEOSWARM_PACKAGED") == "1"
 
 if _is_packaged:
     if sys.platform == "darwin":
-        _app_support = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "OpenSwarm")
+        _app_support = os.path.join(
+            os.path.expanduser("~"), "Library", "Application Support", "NeoSwarm"
+        )
     elif sys.platform == "win32":
-        _app_support = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "OpenSwarm")
+        _app_support = os.path.join(
+            os.environ.get("APPDATA", os.path.expanduser("~")), "NeoSwarm"
+        )
     else:
-        _app_support = os.path.join(os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")), "OpenSwarm")
+        _app_support = os.path.join(
+            os.environ.get(
+                "XDG_DATA_HOME",
+                os.path.join(os.path.expanduser("~"), ".local", "share"),
+            ),
+            "NeoSwarm",
+        )
     DATA_ROOT = os.path.join(_app_support, "data")
 else:
     DATA_ROOT = os.path.join(_BACKEND_DIR, "data")

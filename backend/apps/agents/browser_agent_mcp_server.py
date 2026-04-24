@@ -3,7 +3,7 @@
 Stdio MCP server that exposes BrowserAgent and BrowserAgents delegation tools.
 
 Launched as a subprocess by the Claude Agent SDK. Proxies task delegation
-to the OpenSwarm backend via HTTP, which runs browser sub-agents.
+to the NeoSwarm backend via HTTP, which runs browser sub-agents.
 """
 
 import base64
@@ -16,16 +16,17 @@ from io import BytesIO
 
 try:
     from PIL import Image
+
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
 
-BACKEND_PORT = os.environ.get("OPENSWARM_PORT", "8324")
+BACKEND_PORT = os.environ.get("NEOSWARM_PORT", "8324")
 BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/browser-agent/run"
-MODEL = os.environ.get("OPENSWARM_AGENT_MODEL", "sonnet")
-DASHBOARD_ID = os.environ.get("OPENSWARM_DASHBOARD_ID", "")
-PRE_SELECTED_BROWSER_IDS = os.environ.get("OPENSWARM_PRE_SELECTED_BROWSER_IDS", "")
-PARENT_SESSION_ID = os.environ.get("OPENSWARM_PARENT_SESSION_ID", "")
+MODEL = os.environ.get("NEOSWARM_AGENT_MODEL", "sonnet")
+DASHBOARD_ID = os.environ.get("NEOSWARM_DASHBOARD_ID", "")
+PRE_SELECTED_BROWSER_IDS = os.environ.get("NEOSWARM_PRE_SELECTED_BROWSER_IDS", "")
+PARENT_SESSION_ID = os.environ.get("NEOSWARM_PARENT_SESSION_ID", "")
 
 TOOLS = [
     {
@@ -130,14 +131,18 @@ def send_response(id_, result=None, error=None):
 
 
 def call_backend(tasks: list[dict]) -> dict:
-    pre_selected = [bid.strip() for bid in PRE_SELECTED_BROWSER_IDS.split(",") if bid.strip()]
-    payload = json.dumps({
-        "tasks": tasks,
-        "model": MODEL,
-        "dashboard_id": DASHBOARD_ID,
-        "pre_selected_browser_ids": pre_selected,
-        "parent_session_id": PARENT_SESSION_ID,
-    }).encode()
+    pre_selected = [
+        bid.strip() for bid in PRE_SELECTED_BROWSER_IDS.split(",") if bid.strip()
+    ]
+    payload = json.dumps(
+        {
+            "tasks": tasks,
+            "model": MODEL,
+            "dashboard_id": DASHBOARD_ID,
+            "pre_selected_browser_ids": pre_selected,
+            "parent_session_id": PARENT_SESSION_ID,
+        }
+    ).encode()
     req = urllib.request.Request(
         BACKEND_URL,
         data=payload,
@@ -178,7 +183,10 @@ def compress_screenshot(b64_png: str) -> tuple[str, str] | None:
 def format_result(result: dict) -> dict:
     """Format a single browser agent result into MCP content blocks."""
     if "error" in result:
-        return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": f"Error: {result['error']}"}],
+            "isError": True,
+        }
 
     content = []
 
@@ -187,7 +195,10 @@ def format_result(result: dict) -> dict:
     browser_id = result.get("browser_id", "")
     action_log = result.get("action_log", [])
 
-    lines = [f"**Browser Agent Result** (browser: {browser_id}, session: {session_id})", ""]
+    lines = [
+        f"**Browser Agent Result** (browser: {browser_id}, session: {session_id})",
+        "",
+    ]
     lines.append(f"**Summary:** {summary}")
 
     if action_log:
@@ -216,7 +227,9 @@ def format_result(result: dict) -> dict:
             content.append({"type": "image", "data": image_data, "mimeType": mime_type})
             content.append({"type": "text", "text": "Final screenshot attached above."})
         else:
-            content.append({"type": "text", "text": "Final screenshot was too large to include."})
+            content.append(
+                {"type": "text", "text": "Final screenshot was too large to include."}
+            )
 
     return {"content": content}
 
@@ -224,7 +237,10 @@ def format_result(result: dict) -> dict:
 def format_batch_results(results: list[dict]) -> dict:
     """Format multiple browser agent results."""
     if isinstance(results, dict) and "error" in results:
-        return {"content": [{"type": "text", "text": f"Error: {results['error']}"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": f"Error: {results['error']}"}],
+            "isError": True,
+        }
 
     all_content = []
     for i, result in enumerate(results):
@@ -245,16 +261,25 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         }
         result = call_backend([task_def])
         if "error" in result:
-            return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
+            return {
+                "content": [{"type": "text", "text": f"Error: {result['error']}"}],
+                "isError": True,
+            }
         results = result.get("results", [result])
         if results:
             return format_result(results[0])
-        return {"content": [{"type": "text", "text": "No result returned."}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": "No result returned."}],
+            "isError": True,
+        }
 
     elif tool_name == "BrowserAgent":
         browser_id = arguments.get("browser_id", "")
         if not browser_id:
-            return {"content": [{"type": "text", "text": "Error: browser_id is required"}], "isError": True}
+            return {
+                "content": [{"type": "text", "text": "Error: browser_id is required"}],
+                "isError": True,
+            }
         task_def = {
             "task": arguments.get("task", ""),
             "browser_id": browser_id,
@@ -262,26 +287,49 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         }
         result = call_backend([task_def])
         if "error" in result:
-            return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
+            return {
+                "content": [{"type": "text", "text": f"Error: {result['error']}"}],
+                "isError": True,
+            }
         results = result.get("results", [result])
         if results:
             return format_result(results[0])
-        return {"content": [{"type": "text", "text": "No result returned."}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": "No result returned."}],
+            "isError": True,
+        }
 
     elif tool_name == "BrowserAgents":
         tasks = arguments.get("tasks", [])
         if not tasks:
-            return {"content": [{"type": "text", "text": "Error: tasks array is empty"}], "isError": True}
+            return {
+                "content": [{"type": "text", "text": "Error: tasks array is empty"}],
+                "isError": True,
+            }
         for t in tasks:
             if not t.get("browser_id"):
-                return {"content": [{"type": "text", "text": "Error: browser_id is required for each task"}], "isError": True}
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Error: browser_id is required for each task",
+                        }
+                    ],
+                    "isError": True,
+                }
         result = call_backend(tasks)
         if "error" in result:
-            return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
+            return {
+                "content": [{"type": "text", "text": f"Error: {result['error']}"}],
+                "isError": True,
+            }
         results = result.get("results", [])
         return format_batch_results(results)
 
-    return {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True}
+    return {
+        "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
+        "isError": True,
+    }
 
 
 def main():
@@ -299,14 +347,17 @@ def main():
         params = msg.get("params", {})
 
         if method == "initialize":
-            send_response(id_, {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {
-                    "name": "openswarm-browser-agent",
-                    "version": "1.0.0",
+            send_response(
+                id_,
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {
+                        "name": "neoswarm-browser-agent",
+                        "version": "1.0.0",
+                    },
                 },
-            })
+            )
         elif method == "notifications/initialized":
             pass
         elif method == "tools/list":
@@ -319,7 +370,9 @@ def main():
         elif method == "ping":
             send_response(id_, {})
         elif id_ is not None:
-            send_response(id_, error={"code": -32601, "message": f"Method not found: {method}"})
+            send_response(
+                id_, error={"code": -32601, "message": f"Method not found: {method}"}
+            )
 
 
 if __name__ == "__main__":

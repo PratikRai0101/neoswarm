@@ -3,7 +3,7 @@
 Stdio MCP server that exposes the InvokeAgent tool.
 
 Launched as a subprocess by the Claude Agent SDK. Proxies invocation
-requests to the OpenSwarm backend via HTTP, which forks the target
+requests to the NeoSwarm backend via HTTP, which forks the target
 agent session and runs it with the new message.
 """
 
@@ -13,10 +13,10 @@ import os
 import urllib.request
 import urllib.error
 
-BACKEND_PORT = os.environ.get("OPENSWARM_PORT", "8324")
+BACKEND_PORT = os.environ.get("NEOSWARM_PORT", "8324")
 BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/invoke-agent/run"
-PARENT_SESSION_ID = os.environ.get("OPENSWARM_PARENT_SESSION_ID", "")
-DASHBOARD_ID = os.environ.get("OPENSWARM_DASHBOARD_ID", "")
+PARENT_SESSION_ID = os.environ.get("NEOSWARM_PARENT_SESSION_ID", "")
+DASHBOARD_ID = os.environ.get("NEOSWARM_DASHBOARD_ID", "")
 
 TOOLS = [
     {
@@ -63,12 +63,14 @@ def send_response(id_, result=None, error=None):
 
 
 def call_backend(session_id: str, message: str) -> dict:
-    payload = json.dumps({
-        "session_id": session_id,
-        "message": message,
-        "parent_session_id": PARENT_SESSION_ID,
-        "dashboard_id": DASHBOARD_ID,
-    }).encode()
+    payload = json.dumps(
+        {
+            "session_id": session_id,
+            "message": message,
+            "parent_session_id": PARENT_SESSION_ID,
+            "dashboard_id": DASHBOARD_ID,
+        }
+    ).encode()
     req = urllib.request.Request(
         BACKEND_URL,
         data=payload,
@@ -87,20 +89,32 @@ def call_backend(session_id: str, message: str) -> dict:
 
 def handle_tool_call(tool_name: str, arguments: dict) -> dict:
     if tool_name != "InvokeAgent":
-        return {"content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
+            "isError": True,
+        }
 
     session_id = arguments.get("session_id", "")
     message = arguments.get("message", "")
 
     if not session_id:
-        return {"content": [{"type": "text", "text": "Error: session_id is required"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": "Error: session_id is required"}],
+            "isError": True,
+        }
     if not message:
-        return {"content": [{"type": "text", "text": "Error: message is required"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": "Error: message is required"}],
+            "isError": True,
+        }
 
     result = call_backend(session_id, message)
 
     if "error" in result:
-        return {"content": [{"type": "text", "text": f"Error: {result['error']}"}], "isError": True}
+        return {
+            "content": [{"type": "text", "text": f"Error: {result['error']}"}],
+            "isError": True,
+        }
 
     forked_id = result.get("forked_session_id", "")
     response = result.get("response", "No response from invoked agent.")
@@ -109,7 +123,9 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
 
     lines = [f"**Invoked Agent Result** (forked session: {forked_id})"]
     if source_name:
-        lines[0] = f"**Invoked Agent Result** — {source_name} (forked session: {forked_id})"
+        lines[0] = (
+            f"**Invoked Agent Result** — {source_name} (forked session: {forked_id})"
+        )
     if cost > 0:
         lines.append(f"*Cost: ${cost:.4f}*")
     lines.append("")
@@ -133,14 +149,17 @@ def main():
         params = msg.get("params", {})
 
         if method == "initialize":
-            send_response(id_, {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {
-                    "name": "openswarm-invoke-agent",
-                    "version": "1.0.0",
+            send_response(
+                id_,
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {
+                        "name": "neoswarm-invoke-agent",
+                        "version": "1.0.0",
+                    },
                 },
-            })
+            )
         elif method == "notifications/initialized":
             pass
         elif method == "tools/list":
@@ -153,7 +172,9 @@ def main():
         elif method == "ping":
             send_response(id_, {})
         elif id_ is not None:
-            send_response(id_, error={"code": -32601, "message": f"Method not found: {method}"})
+            send_response(
+                id_, error={"code": -32601, "message": f"Method not found: {method}"}
+            )
 
 
 if __name__ == "__main__":

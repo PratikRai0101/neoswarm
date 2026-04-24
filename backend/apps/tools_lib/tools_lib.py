@@ -40,7 +40,7 @@ from backend.config.paths import (
 )
 
 load_dotenv(os.path.join(BACKEND_DIR, ".env"))
-if os.environ.get("OPENSWARM_PACKAGED") == "1":
+if os.environ.get("NEOSWARM_PACKAGED") == "1":
     load_dotenv(os.path.join(os.path.dirname(DATA_ROOT), ".env"), override=True)
 
 
@@ -163,7 +163,7 @@ async def oauth_callback(code: str = Query(...), state: str = Query("")):
     code_verifier = pending.get("code_verifier") if isinstance(pending, dict) else None
 
     tool = _load(tool_id)
-    _port = os.environ.get("OPENSWARM_PORT", "8324")
+    _port = os.environ.get("NEOSWARM_PORT", "8324")
     redirect_uri = f"http://localhost:{_port}/api/tools/oauth/callback"
 
     if tool.name.lower() == "airtable":
@@ -487,7 +487,7 @@ def _resolve_command(command: str) -> str | None:
     _backend = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     )
-    _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+    _is_packaged = os.environ.get("NEOSWARM_PACKAGED") == "1"
     if _is_packaged:
         # In packaged app: <resources>/backend/uv-bin/
         candidate = os.path.join(_backend, "uv-bin", command)
@@ -569,7 +569,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
     # Microsoft 365 MCP: use a stable token cache path shared across process spawns
     if tool.name.lower() == "microsoft 365" and config.get("type") == "stdio":
         env = config.setdefault("env", {})
-        cache_dir = os.path.join(os.path.expanduser("~"), ".openswarm")
+        cache_dir = os.path.join(os.path.expanduser("~"), ".neoswarm")
         os.makedirs(cache_dir, exist_ok=True)
         env["MS365_MCP_TOKEN_CACHE_PATH"] = os.path.join(
             cache_dir, "ms365-token-cache.json"
@@ -590,7 +590,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
                     _backend = os.path.dirname(
                         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                     )
-                    electron_path = os.environ.get("OPENSWARM_ELECTRON_PATH")
+                    electron_path = os.environ.get("NEOSWARM_ELECTRON_PATH")
                     # Check for single-file bundle first (e.g. reddit-mcp-buddy)
                     bundle_path = os.path.join(
                         _backend, "mcp-bundles", f"{pkg_name}.js"
@@ -647,7 +647,7 @@ def derive_mcp_config(tool: ToolDefinition) -> Optional[dict]:
         env.setdefault("PYTHONPATH", "")
         # Point uv/uvx at our bundled Python — avoids macOS CLT popup on fresh Macs
         # and avoids downloading Python at runtime
-        _is_packaged = os.environ.get("OPENSWARM_PACKAGED") == "1"
+        _is_packaged = os.environ.get("NEOSWARM_PACKAGED") == "1"
         if _is_packaged:
             _resources = os.path.dirname(
                 os.path.dirname(
@@ -1146,7 +1146,7 @@ def _m365_server_script() -> str:
 
 
 def _m365_cache_env() -> dict[str, str]:
-    cache_dir = os.path.join(os.path.expanduser("~"), ".openswarm")
+    cache_dir = os.path.join(os.path.expanduser("~"), ".neoswarm")
     os.makedirs(cache_dir, exist_ok=True)
     return {
         "MS365_MCP_TOKEN_CACHE_PATH": os.path.join(cache_dir, "ms365-token-cache.json"),
@@ -1344,7 +1344,7 @@ async def oauth_disconnect(tool_id: str):
 @tools_lib.router.post("/{tool_id}/oauth/start")
 async def oauth_start(tool_id: str):
     tool = _load(tool_id)
-    _port = os.environ.get("OPENSWARM_PORT", "8324")
+    _port = os.environ.get("NEOSWARM_PORT", "8324")
     redirect_uri = f"http://localhost:{_port}/api/tools/oauth/callback"
     state = tool_id
 
