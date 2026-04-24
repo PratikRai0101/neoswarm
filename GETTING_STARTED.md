@@ -1,6 +1,6 @@
 # Getting Started
 
-A step-by-step guide to get Open Swarm running locally — from clone to launch.
+A step-by-step guide to get NeoSwarm running locally — from clone to launch.
 
 ---
 
