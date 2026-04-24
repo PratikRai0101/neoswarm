@@ -1330,71 +1330,34 @@ class AgentManager:
 
             tool_schemas = _build_tool_schemas(effective_allowed)
 
+            # Import the real tools registry
+            from backend.apps.agents.tools.registry import get_tool as _get_tool
+            from backend.apps.agents.tools.base import ToolContext
+
             async def _tool_executor(tool_name: str, tool_input: dict) -> list[dict]:
-                """Execute a tool and return results in provider-agnostic format.
-
-                Builtin tools: handled directly here.
-                MCP tools: routed via the MCP server subprocesses managed by _build_mcp_servers.
-                Full builtin tool implementation (Read, Edit, Bash, etc.) will be wired
-                up in a follow-up phase — for now this serves as a placeholder that returns
-                a descriptive result so the agent loop doesn't crash.
-                """
-                # Basic builtin tool stubs — real implementation in next phase
-                if tool_name in ("Read", "Glob", "Grep", "WebFetch"):
-                    return [
-                        {
-                            "type": "text",
-                            "text": f"[Placeholder] Tool '{tool_name}' called with {tool_input} — full execution coming in next phase.",
-                        }
-                    ]
-                if tool_name == "Bash":
-                    import subprocess, shlex
-
-                    cmd = tool_input.get("command", "")
+                """Execute a tool via the real tool system."""
+                tool = _get_tool(tool_name)
+                if tool:
+                    context = ToolContext(
+                        cwd=session.cwd,
+                        session_id=session_id,
+                    )
                     try:
-                        result = subprocess.run(
-                            shlex.split(cmd),
-                            capture_output=True,
-                            text=True,
-                            timeout=30,
-                            cwd=session.cwd,
-                        )
-                        return [
-                            {
-                                "type": "text",
-                                "text": result.stdout or result.stderr or "Done.",
-                            }
-                        ]
+                        return await tool.execute(tool_input, context)
                     except Exception as e:
-                        return [{"type": "text", "text": f"Bash error: {e}"}]
-                if tool_name == "TodoWrite":
-                    return [
-                        {
-                            "type": "text",
-                            "text": f"[Placeholder] TodoWrite: {tool_input}",
-                        }
-                    ]
-                if tool_name == "WebSearch":
-                    query = tool_input.get("query", "")
-                    return [
-                        {
-                            "type": "text",
-                            "text": f"[Placeholder] WebSearch for '{query}' — full search coming in next phase.",
-                        }
-                    ]
+                        return [{"type": "text", "text": f"Tool error: {e}"}]
+
+                # MCP tools are handled separately via subprocess
                 if tool_name.startswith("mcp__"):
                     return [
                         {
                             "type": "text",
-                            "text": f"[Placeholder] MCP tool '{tool_name}' called — MCP execution handled by subprocess.",
+                            "text": f"MCP tool '{tool_name}' — execution handled by MCP server.",
                         }
                     ]
-                return [
-                    {
-                        "type": "text",
-                        "text": f"Tool '{tool_name}' executed with {tool_input}",
-                    }
-                ]
+
+                # Unknown tool
+                return [{"type": "text", "text": f"Unknown tool: {tool_name}"}]
 
             async def _hitl_handler(
                 tool_name: str, tool_input: dict
