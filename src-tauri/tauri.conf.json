@@ -1,12 +1,11 @@
 {
   "productName": "NeoSwarm",
   "version": "0.1.0",
-  "identifier": "com.neoswarm.app",
+  "identifier": "com.neoswarm.desktop",
   "build": {
-    "frontendDist": "/home/raijinnn0101/Development/NeoSwarm/frontend/dist",
+    "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "cd ../frontend && npm run dev",
-    "beforeBuildCommand": "cd ../frontend && npm run build"
+    "beforeDevCommand": "cd ../frontend && npm run dev"
   },
   "app": {
     "windows": [
@@ -28,6 +27,9 @@
   "bundle": {
     "active": true,
     "targets": ["appimage", "deb"],
+    "resources": {
+      "../backend": "backend"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
