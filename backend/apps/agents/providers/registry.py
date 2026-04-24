@@ -1,14 +1,10 @@
 """Provider registry and model catalog.
 
-NOTE: `create_provider`, `BaseProvider`, `AnthropicProvider`, `OpenAICompatProvider`,
-and the native `AgentLoop` are currently unused. The live agent path is
-`claude_agent_sdk` via `agent_manager._run_agent_loop`. Kept as a foundation
-for a potential future native multi-provider loop.
+NeoSwarm uses native provider adapters (AnthropicProvider, OpenAICompatProvider,
+OllamaProvider, etc.) instead of claude-agent-sdk. Each provider implements
+BaseProvider for a consistent interface.
 
-Multi-model subscription support routes non-Anthropic models through 9Router's
-`/v1/messages` endpoint by passing prefixed model IDs (e.g. `cx/gpt-5.4`,
-`gc/gemini-2.5-pro`, `gh/claude-sonnet-4`). 9Router's translator converts the
-Anthropic-format request into the provider's native format transparently.
+Model selection is configured per-session. Ollama runs fully local with no API key.
 """
 
 from __future__ import annotations
@@ -89,6 +85,50 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
             "router_model_id": "cc/claude-haiku-4-5-20251001",
             "api": "anthropic",
             "reasoning": True,
+        },
+    ],
+    # Ollama: local models. These require no API key - runs on localhost:11434.
+    # Model IDs are whatever you have installed: llama3.3, qwen2.5, mistral, etc.
+    "Ollama": [
+        {
+            "value": "llama3.3",
+            "label": "Llama 3.3 (70B)",
+            "context_window": 128_000,
+            "model_id": "llama3.3",
+            "api": "ollama",
+            "reasoning": False,
+        },
+        {
+            "value": "qwen2.5",
+            "label": "Qwen 2.5 (72B)",
+            "context_window": 128_000,
+            "model_id": "qwen2.5",
+            "api": "ollama",
+            "reasoning": False,
+        },
+        {
+            "value": "mistral",
+            "label": "Mistral",
+            "context_window": 128_000,
+            "model_id": "mistral",
+            "api": "ollama",
+            "reasoning": False,
+        },
+        {
+            "value": "codellama",
+            "label": "Code Llama",
+            "context_window": 128_000,
+            "model_id": "codellama",
+            "api": "ollama",
+            "reasoning": False,
+        },
+        {
+            "value": "deepseek-coder",
+            "label": "DeepSeek Coder",
+            "context_window": 128_000,
+            "model_id": "deepseek-coder",
+            "api": "ollama",
+            "reasoning": False,
         },
     ],
     # OpenAI: ChatGPT Plus/Pro (Codex) subscription. gpt-5.4 is the
