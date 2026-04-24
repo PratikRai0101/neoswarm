@@ -56,9 +56,12 @@ curl http://localhost:8324/api/health/check
 - Task decomposition and worker spawning
 - Progress monitoring and result synthesis
 
-## Phase 4: CLI + TUI (Future)
-- Add OpenCode-style TUI
-- Add Codex-style CLI
+## Phase 4: CLI + TUI — ✅ COMPLETE
+
+**What was done**:
+- Added CLI with Click (chat, launch, status, models, sessions)
+- Added TUI with Textual (rich terminal UI)
+- Created setup.py entry point
 
 ## Phase 5: Packaging (Future)
 - Build AppImage for Linux
