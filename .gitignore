@@ -24,3 +24,10 @@ backend/npm-servers/*/node_modules/
 frontend/dist/
 # Bundled uv binaries (downloaded during build)
 backend/uv-bin/
+
+# Tauri build artifacts (too large for GitHub)
+src-tauri/target/
+
+# Python virtual environments
+**/.venv/
+**/venv/
