@@ -2,36 +2,26 @@
 
 > Quick reference for developers working on NeoSwarm. Updated as we build.
 
-## All Phases Complete! ✅
+---
 
-### Phase 1: Fork + Rebrand + Linux Foundation — ✅ COMPLETE
-- Copied from OpenSwarm
-- Removed Electron (replaced by Tauri)
-- Created README, LICENSE, NOTICE
+## Vision: "Codex for Everything" — NeoSwarm
 
-### Phase 2: Native Agent System — ✅ COMPLETE
-- Added OllamaProvider for fully local model inference
-- Added Ollama models to registry (llama3.3, qwen2.5, mistral, codellama, deepseek-coder)
-- Swapped import priority: native AgentLoop first, mock fallback
-- Removed 9Router from credentials, registry, analytics
-- Backend runs without any cloud dependencies
+NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to OpenAI's Codex app, with multi-agent coordination, computer use, and extensible tools.
 
-### Phase 3: Orchestrator Agent — ✅ COMPLETE
-- Created OrchestratorAgent class in orchestrator.py
-- Added SubTask and Worker dataclasses
-- Added task decomposition (LLM + fallback)
-- Added worker spawning and progress tracking
-- Added result synthesis
+---
 
-### Phase 4: CLI + TUI — ✅ COMPLETE
-- Added CLI with Click (chat, launch, status, models, sessions)
-- Added TUI with Textual (rich terminal UI)
-- Created setup.py entry point
+## Phase Status
 
-### Phase 5: Packaging — ✅ COMPLETE
-- Built Tauri v2 native app (debug binary: 224MB)
-- Added icons for Linux/Windows/macOS
-- Native desktop shell replaces Electron
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1: Fork + Rebrand | ✅ Complete | Forked from OpenSwarm, Tauri instead of Electron |
+| Phase 2: Native Agent System | ✅ Complete | Ollama support, native AgentLoop |
+| Phase 3: Orchestrator Agent | ✅ Complete | Multi-agent coordination |
+| Phase 4: CLI + TUI | ✅ Complete | Basic CLI and TUI |
+| Phase 5: Packaging | ✅ Complete | Tauri app with new icon |
+| Phase 6: Codex-style Features | 🔄 In Progress | Auth, TUI, memory, automation |
+
+---
 
 ## Running the App
 
@@ -71,29 +61,121 @@ neoswarm status
 curl http://localhost:8324/api/health/check
 ```
 
-## Architecture Notes
+---
+
+## Architecture
+
+### Stack
+| Layer | Technology |
+|-------|------------|
+| Desktop Shell | Tauri (Rust) |
+| UI (Native) | React/TypeScript |
+| UI (TUI) | Textual (Python) |
+| Backend | FastAPI + Uvicorn |
+| Agents | Orchestrator + Worker agents |
+| Tools | MCP + Bash + Browser |
+| Models | Ollama + Anthropic + OpenAI + Google |
 
 ### Provider Model
 The system uses a pluggable provider adapter pattern:
-- **Ollama** (default, fully local) — no API key needed
+- **Ollama** (default, fully local) — no API key needed, runs on localhost:11434
 - **Anthropic** — requires ANTHROPIC_API_KEY
 - **OpenAI** — requires OPENAI_API_KEY
 - **Google/Gemini** — requires GOOGLE_API_KEY
 - **OpenRouter** — requires OPENROUTER_API_KEY
 
 ### Agent Loop
-The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) replaces `claude_agent_sdk`.
-It handles streaming, tool use, and HITL approvals in a provider-agnostic way.
+The native `AgentLoop` (`backend/apps/agents/agent_loop.py`) handles streaming, tool use, and HITL approvals in a provider-agnostic way.
 
 ### Environment Variables
-Key env vars (formerly OPENSWARM_*):
 - `NEOSWARM_PORT` — backend port (default: 8324)
 - `NEOSWARM_PACKAGED` — set to "1" when running as Tauri app
-- `NEOSWARM_ELECTRON_PATH` — path to electron (legacy, unused)
+- `ANTHROPIC_API_KEY` — Anthropic API key
+- `OPENAI_API_KEY` — OpenAI API key
+- `GOOGLE_API_KEY` — Google API key
 
-### Cache Directory
-User data: `~/.neoswarm/` (formerly `~/.openswarm/`)
-Packaged data: `~/.local/share/NeoSwarm/data/` (Linux), `~/Library/Application Support/NeoSwarm/data/` (macOS)
+### Cache / Data Directory
+- User data: `~/.neoswarm/`
+- Packaged data: `~/.local/share/NeoSwarm/data/`
+
+---
+
+## Features (Codex-style)
+
+### Implemented ✅
+| Feature | Description |
+|--------|-------------|
+| Multi-agent | Orchestrator coordinates multiple workers |
+| Browser Agent | Computer use via browser automation |
+| MCP Tools | 9+ built-in tools (Read, Write, Edit, Glob, Grep, etc.) |
+| Local Models | Ollama support (fully offline) |
+| Sessions | Chat session persistence |
+| Tauri App | Native desktop app with new icon |
+
+### To Build 🔄
+| Feature | Priority | Description |
+|---------|-----------|-------------|
+| Auth System | High | Interactive provider setup (like OpenCode's `/connect`) |
+| Model Switching | High | Change model mid-conversation |
+| Enhanced Chat UI | High | Full message history, tool output display |
+| Memory System | Medium | Persistent context across sessions |
+| In-app Browser | Medium | Tauri webview integration |
+| Scheduled Tasks | Medium | Automation with scheduling |
+| 90+ Tools | Low | More MCP integrations |
+
+---
+
+## Roadmap
+
+### Phase 7: Auth System (High Priority)
+- [ ] `neoswarm auth login` command - Interactive provider setup
+- [ ] `auth.json` storage at `~/.neoswarm/auth.json`
+- [ ] Provider status in TUI
+- [ ] Environment variable integration
+
+### Phase 8: Enhanced TUI (High Priority)
+- [ ] Chat panel with message history
+- [ ] Model picker (switch mid-conversation)
+- [ ] Session management (create, switch, delete)
+- [ ] Tool output display
+- [ ] Keyboard shortcuts (like OpenCode)
+
+### Phase 9: Memory System (Medium Priority)
+- [ ] Session context persistence
+- [ ] User preferences storage
+- [ ] Context carryover between sessions
+
+### Phase 10: Advanced Features (Low Priority)
+- [ ] In-app browser (Tauri webview)
+- [ ] Scheduled/automated tasks
+- [ ] More MCP server integrations
+- [ ] Image generation tool
+
+---
+
+## CLI Commands Reference
+
+```bash
+# Chat with specific model
+neoswarm chat --model sonnet
+
+# Launch orchestrator mission
+neoswarm launch "build a web scraper" --workers 3
+
+# List available models
+neoswarm models
+
+# List sessions
+neoswarm sessions
+
+# Check backend status
+neoswarm status
+
+# Start backend server
+neoswarm server
+```
+
+---
 
 ## Notes
 
@@ -101,22 +183,22 @@ Packaged data: `~/.local/share/NeoSwarm/data/` (Linux), `~/Library/Application S
 - Run from project root with `PYTHONPATH=.`
 - Health check is at `/api/health/check` not `/health`
 - MCP server names: `neoswarm-browser-agent`, `neoswarm-invoke-agent`
+- Default model: `sonnet` (Anthropic Sonnet 4.6)
+- Default provider: Ollama (local, no API key needed)
 
 ---
 
-## Roadmap
+## Comparison: NeoSwarm vs OpenAI Codex
 
-### In Progress
-- [ ] Auth system (OpenCode-style: `neoswarm auth login`)
-- [ ] Provider configuration (Anthropic, OpenAI, Ollama, Google)
-- [ ] Model switching mid-conversation
-- [ ] Enhanced TUI with full chat functionality
-
-### TODO
-- [ ] Fix standalone binary backend spawn
-- [ ] Build release AppImage with working bundler
+| Feature | Codex | NeoSwarm |
+|---------|-------|----------|
+| Computer Use | ✅ macOS app control | ✅ Browser automation |
+| Local Models | ❌ Cloud only | ✅ Ollama (fully local) |
+| Multi-agent | ✅ Parallel agents | ✅ Orchestrator |
+| Open Source | ❌ Proprietary | ✅ MIT License |
+| Self-hosted | ❌ Requires OpenAI | ✅ Runs locally |
 
 ---
 
 *Last updated: 2026-04-25*
-*All 6 phases complete — moving to auth system and TUI enhancements*
+*Building toward "Codex for Everything" - local-first AI agent orchestrator*
