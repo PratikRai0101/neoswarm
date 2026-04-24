@@ -1,0 +1,7 @@
+setup.py
+neoswarm.egg-info/PKG-INFO
+neoswarm.egg-info/SOURCES.txt
+neoswarm.egg-info/dependency_links.txt
+neoswarm.egg-info/entry_points.txt
+neoswarm.egg-info/requires.txt
+neoswarm.egg-info/top_level.txt

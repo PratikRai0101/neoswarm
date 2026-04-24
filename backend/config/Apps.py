@@ -1,7 +1,7 @@
 import os
 
 from fastapi import FastAPI, APIRouter
-import debug
+from backend.debug import debug as debug_fn
 from uuid import uuid4
 from typing import List
 from contextlib import asynccontextmanager
@@ -10,39 +10,38 @@ from typing import Callable
 
 
 class SubApp:
-    def __init__(self, name:str, lifespan:Callable):
-        debug("START", name)
+    def __init__(self, name: str, lifespan: Callable):
+        debug_fn("START", name)
         self.id = uuid4()
         self.name = name
         self.prefix = f"/api/{name}"
         self.lifespan = lifespan
         self.router = APIRouter()
-        debug("END")
-    
+        debug_fn("END")
+
     def __str__(self):
         return f"SubApp(name={self.name}, prefix={self.prefix}, id={self.id})"
 
+
 class MainApp:
     def __init__(self, sub_apps: List[SubApp]):
-        debug("START")
-        
+        debug_fn("START")
+
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             async with AsyncExitStack() as stack:
                 for sub_app in sub_apps:
-                    debug(sub_app.name)
+                    debug_fn(sub_app.name)
                     await stack.enter_async_context(sub_app.lifespan())
                 _port = os.environ.get("OPENSWARM_PORT", "8324")
                 print(f"\nCheck out the API docs at: http://127.0.0.1:{_port}/docs\n")
                 yield
-                
+
         self.app = FastAPI(lifespan=lifespan)
-        
+
         # Include all sub-app routers in the main app with their prefixes
         for sub_app in sub_apps:
             self.app.include_router(
-                sub_app.router, 
-                prefix=sub_app.prefix,
-                tags=[sub_app.name]
+                sub_app.router, prefix=sub_app.prefix, tags=[sub_app.name]
             )
-        debug("END")
+        debug_fn("END")
