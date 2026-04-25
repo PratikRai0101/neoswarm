@@ -13,6 +13,7 @@ import asyncio
 import os
 import sys
 from typing import Optional
+from rich.console import Console
 
 import click
 import httpx
@@ -181,25 +182,28 @@ def auth():
 
 
 @auth.command()
-@click.option("--provider", "-p", type=click.Choice(["anthropic", "openai", "google", "ollama", "openrouter"]), help="Provider to configure")
-@click.option("--api-key", "-k", help="API key for the provider")
+@click.option("--provider", "-p", default=None, help="Provider to configure")
+@click.option("--api-key", "-k", default=None, help="API key for the provider")
 def login(provider: Optional[str], api_key: Optional[str]):
     """Configure API credentials for a provider."""
     console.print("[green]🐝 NeoSwarm Auth - Login[/green]\n")
 
     if not provider:
-        console.print("[yellow]Select a provider:[/yellow]")
+        console.print("[cyan]Select provider:[/cyan]")
         console.print("  1. anthropic    - Anthropic (Claude)")
         console.print("  2. openai     - OpenAI")
         console.print("  3. google     - Google (Gemini)")
         console.print("  4. ollama     - Ollama (local)")
         console.print("  5. openrouter - OpenRouter")
-        return
+        choice = click.prompt("Enter choice", type=int, default=1, show_default=False)
+        providers = ["anthropic", "openai", "google", "ollama", "openrouter"]
+        provider = providers[choice - 1]
 
     if not api_key and provider != "ollama":
-        console.print(f"[yellow]Enter API key for {provider}:[/yellow]")
-        console.print(f"[dim]Or use: neoswarm auth login -p {provider} -k YOUR_API_KEY[/dim]")
-        return
+        api_key = click.prompt(f"Enter API key for {provider}", hide_input=True)
+        if not api_key:
+            console.print("[red]API key required[/red]")
+            return
 
     if provider == "ollama":
         console.print("[green]✓ Ollama configured (local, no API key needed)[/green]")
