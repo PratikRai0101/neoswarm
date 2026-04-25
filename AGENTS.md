@@ -233,6 +233,8 @@ NeoSwarm supports two levels of computer automation:
 - [x] Session management (create, switch, delete)
 - [x] Tool output display
 - [x] Keyboard shortcuts (like OpenCode)
+- [x] Dynamic Ollama model fetching (from /api/tags)
+- [x] GitHub Copilot OAuth Device Flow
 
 ### Phase 9: Native App Enhancements (Medium Priority)
 - [ ] Full message history
