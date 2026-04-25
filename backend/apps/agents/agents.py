@@ -330,7 +330,7 @@ async def list_models():
                     if user_resp.status_code == 200:
                         user_data = user_resp.json()
                         result["Copilot"] = [
-                            {"value": "copilot", "label": f"GitHub Copilot ({user_data.get('login', ''})", "context_window": 128_000, "reasoning": False},
+                            {"value": "copilot", "label": f"GitHub Copilot ({user_data.get('login', '')})", "context_window": 128_000, "reasoning": False},
                         ]
         except Exception:
             pass
