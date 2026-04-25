@@ -287,12 +287,33 @@ async def list_models():
     except Exception:
         pass  # Ollama not running
 
-    # Add GitHub Copilot models if token available
+    # Fetch GitHub Copilot models if token available
     if settings.copilot_github_token:
-        result["Copilot"] = [
-            {"value": "copilot", "label": "Copilot (Chat)", "context_window": 128_000, "reasoning": False},
-            {"value": "copilot-claude-3.5", "label": "Claude 3.5 Sonnet via Copilot", "context_window": 200_000, "reasoning": False},
-            {"value": "copilot-gpt-4o", "label": "GPT-4o via Copilot", "context_window": 128_000, "reasoning": False},
-        ]
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                # Check token is valid by fetching user info
+                resp = await client.get(
+                    "https://api.github.com/user",
+                    headers={
+                        "Authorization": f"Bearer {settings.copilot_github_token}",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                        "Accept": "application/vnd.github+json",
+                    },
+                    timeout=10.0,
+                )
+                if resp.status_code == 200:
+                    user_data = resp.json()
+                    copilot_models = [
+                        {
+                            "value": "copilot",
+                            "label": f"GitHub Copilot ({user_data.get('login', 'connected')})",
+                            "context_window": 128_000,
+                            "reasoning": False,
+                        }
+                    ]
+                    result["Copilot"] = copilot_models
+        except Exception:
+            pass  # Keep showing Copilot as available if token exists
 
     return {"models": result}
