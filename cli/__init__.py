@@ -201,20 +201,64 @@ def login(provider: Optional[str], api_key: Optional[str]):
         provider = providers[choice - 1]
 
     if provider == "copilot":
-        token = api_key or click.prompt("Enter GitHub token (ghp_...)", hide_input=True)
-        if not token:
-            console.print("[red]Token required[/red]")
-            return
+        console.print("[cyan]Starting GitHub device flow authentication...[/cyan]\n")
+        
         async def run():
             async with httpx.AsyncClient() as client:
-                resp = await client.put(
-                    f"{get_backend_url()}/api/settings",
-                    json={"copilot_github_token": token}
+                resp = await client.post(
+                    "https://github.com/login/device/code",
+                    data={"client_id": "Iv1.2e2063e8b2a1b03c", "scope": "copilot"},
                 )
-                if resp.status_code == 200:
-                    console.print("[green]✓ GitHub Copilot connected[/green]")
-                else:
-                    console.print("[red]Failed to save token[/red]")
+                if resp.status_code != 200:
+                    console.print(f"[red]Failed to start device flow: {resp.text}[/red]")
+                    return
+                
+                data = resp.json()
+                device_code = data["device_code"]
+                user_code = data["user_code"]
+                verification_uri = data["verification_uri"]
+                interval = int(data.get("interval", 5))
+                
+                console.print(f"[yellow]Step 1:[/yellow] Visit: {verification_uri}")
+                console.print(f"[yellow]Step 2:[/yellow] Enter code: [bold cyan]{user_code}[/bold cyan]\n")
+                console.print("[dim]Waiting for authentication... (press Ctrl+C to cancel)[/dim]\n")
+                
+                import webbrowser
+                webbrowser.open(verification_uri)
+                
+                import time
+                for i in range(120):
+                    await asyncio.sleep(interval)
+                    try:
+                        resp = await client.post(
+                            "https://github.com/login/oauth/access_token",
+                            data={
+                                "client_id": "Iv1.2e2063e8b2a1b03c",
+                                "device_code": device_code,
+                                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                            },
+                        )
+                    except Exception:
+                        continue
+                        
+                    if resp.status_code == 200:
+                        token_data = resp.json()
+                        if "access_token" in token_data:
+                            access_token = token_data["access_token"]
+                            
+                            await client.put(
+                                f"{get_backend_url()}/api/settings",
+                                json={"copilot_github_token": access_token},
+                            )
+                            console.print(f"[green]✓ GitHub Copilot authenticated![/green]")
+                            return
+                        
+                        if token_data.get("error") in ["expired_token", "slow_down"]:
+                            console.print("[red]Authentication expired. Try again.[/red]")
+                            return
+                
+                console.print("[red]Authentication timed out. Try again.[/red]")
+        
         asyncio.run(run())
         return
 
