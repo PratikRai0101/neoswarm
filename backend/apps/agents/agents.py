@@ -321,12 +321,12 @@ async def list_models():
 
     # Fetch GitHub Copilot models if token available
     if settings.copilot_github_token:
-        copilot_models = list(COPILOT_KNOWN_MODELS)  # Start with known models
+        copilot_models = list(COPILOT_KNOWN_MODELS)  # Start with official Copilot models
         
         try:
             import httpx
             async with httpx.AsyncClient() as client:
-                # Also fetch public catalog models
+                # Also fetch public GitHub Models catalog (separate service!)
                 resp = await client.get(
                     "https://models.github.ai/catalog/models",
                     headers={
@@ -338,16 +338,20 @@ async def list_models():
                 )
                 if resp.status_code == 200:
                     data = resp.json()
+                    # Add public GitHub Models as separate category (NOT Copilot!)
+                    public_models = []
                     for model in data:
                         name = model.get("name", "")
                         pub = model.get("publisher", "")
                         caps = model.get("capabilities", [])
-                        copilot_models.append({
+                        public_models.append({
                             "value": model.get("id", f"{pub}/{name}"),
-                            "label": f"{name} ({pub})",
+                            "label": f"{name} ({pub}) [Catalog]",
                             "context_window": model.get("limits", {}).get("max_input_tokens", 128_000),
                             "reasoning": "reasoning" in caps,
                         })
+                    if public_models:
+                        result["GitHub Models"] = public_models  # Separate from Copilot!
                 elif resp.status_code == 401:
                     # Token invalid, try to just show user
                     user_resp = await client.get(
