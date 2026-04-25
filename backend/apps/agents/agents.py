@@ -292,28 +292,47 @@ async def list_models():
         try:
             import httpx
             async with httpx.AsyncClient() as client:
-                # Check token is valid by fetching user info
+                # Fetch available models from GitHub Models catalog
                 resp = await client.get(
-                    "https://api.github.com/user",
+                    "https://models.github.ai/catalog/models",
                     headers={
                         "Authorization": f"Bearer {settings.copilot_github_token}",
                         "X-GitHub-Api-Version": "2022-11-28",
                         "Accept": "application/vnd.github+json",
                     },
-                    timeout=10.0,
+                    timeout=15.0,
                 )
                 if resp.status_code == 200:
-                    user_data = resp.json()
-                    copilot_models = [
-                        {
-                            "value": "copilot",
-                            "label": f"GitHub Copilot ({user_data.get('login', 'connected')})",
-                            "context_window": 128_000,
-                            "reasoning": False,
-                        }
-                    ]
-                    result["Copilot"] = copilot_models
+                    data = resp.json()
+                    copilot_models = []
+                    for model in data:
+                        name = model.get("name", "")
+                        pub = model.get("publisher", "")
+                        caps = model.get("capabilities", [])
+                        copilot_models.append({
+                            "value": model.get("id", f"{pub}/{name}"),
+                            "label": f"{name} ({pub})",
+                            "context_window": model.get("limits", {}).get("max_input_tokens", 128_000),
+                            "reasoning": "reasoning" in caps,
+                        })
+                    if copilot_models:
+                        result["Copilot"] = copilot_models
+                elif resp.status_code == 401:
+                    # Token invalid, try to just show user
+                    user_resp = await client.get(
+                        "https://api.github.com/user",
+                        headers={
+                            "Authorization": f"Bearer {settings.copilot_github_token}",
+                            "X-GitHub-Api-Version": "2022-11-28",
+                            "Accept": "application/vnd.github+json",
+                        },
+                    )
+                    if user_resp.status_code == 200:
+                        user_data = user_resp.json()
+                        result["Copilot"] = [
+                            {"value": "copilot", "label": f"GitHub Copilot ({user_data.get('login', ''})", "context_window": 128_000, "reasoning": False},
+                        ]
         except Exception:
-            pass  # Keep showing Copilot as available if token exists
+            pass
 
     return {"models": result}
