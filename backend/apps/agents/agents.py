@@ -287,12 +287,36 @@ async def list_models():
     except Exception:
         pass  # Ollama not running
 
+    # Known Copilot-specific models (not in public API)
+    COPILOT_KNOWN_MODELS = [
+        # Anthropic models
+        {"value": "anthropic/claude-opus-4-7", "label": "Claude Opus 4.7 (Anthropic)", "context_window": 200_000, "reasoning": True},
+        {"value": "anthropic/claude-opus-4-6", "label": "Claude Opus 4.6 (Anthropic)", "context_window": 200_000, "reasoning": True},
+        {"value": "anthropic/claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (Anthropic)", "context_window": 200_000, "reasoning": False},
+        {"value": "anthropic/claude-sonnet-4-5", "label": "Claude Sonnet 4.5 (Anthropic)", "context_window": 200_000, "reasoning": False},
+        {"value": "anthropic/claude-haiku-4-5", "label": "Claude Haiku 4.5 (Anthropic)", "context_window": 200_000, "reasoning": False},
+        # Google models
+        {"value": "google/gemini-2-5-pro", "label": "Gemini 2.5 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "google/gemini-2-0-flash", "label": "Gemini 2.0 Flash (Google)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "google/gemini-3-pro", "label": "Gemini 3 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
+        # xAI Grok
+        {"value": "xai/grok-3", "label": "Grok 3 (xAI)", "context_window": 131_072, "reasoning": True},
+        {"value": "xai/grok-3-mini", "label": "Grok 3 Mini (xAI)", "context_window": 131_072, "reasoning": True},
+        # Newer OpenAI (not in public API yet)
+        {"value": "openai/gpt-5-4", "label": "GPT-5.4 (OpenAI)", "context_window": 200_000, "reasoning": True},
+        {"value": "openai/gpt-5-4-mini", "label": "GPT-5.4 Mini (OpenAI)", "context_window": 200_000, "reasoning": True},
+        {"value": "openai/gpt-5-2-codex", "label": "GPT-5.2 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
+        {"value": "openai/gpt-5-3-codex", "label": "GPT-5.3 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
+    ]
+
     # Fetch GitHub Copilot models if token available
     if settings.copilot_github_token:
+        copilot_models = list(COPILOT_KNOWN_MODELS)  # Start with known models
+        
         try:
             import httpx
             async with httpx.AsyncClient() as client:
-                # Fetch available models from GitHub Models catalog
+                # Also fetch public catalog models
                 resp = await client.get(
                     "https://models.github.ai/catalog/models",
                     headers={
@@ -304,7 +328,6 @@ async def list_models():
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    copilot_models = []
                     for model in data:
                         name = model.get("name", "")
                         pub = model.get("publisher", "")
@@ -315,8 +338,6 @@ async def list_models():
                             "context_window": model.get("limits", {}).get("max_input_tokens", 128_000),
                             "reasoning": "reasoning" in caps,
                         })
-                    if copilot_models:
-                        result["Copilot"] = copilot_models
                 elif resp.status_code == 401:
                     # Token invalid, try to just show user
                     user_resp = await client.get(
@@ -332,6 +353,8 @@ async def list_models():
                         result["Copilot"] = [
                             {"value": "copilot", "label": f"GitHub Copilot ({user_data.get('login', '')})", "context_window": 128_000, "reasoning": False},
                         ]
+                if copilot_models:
+                    result["Copilot"] = copilot_models
         except Exception:
             pass
 
