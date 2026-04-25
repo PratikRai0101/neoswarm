@@ -23,29 +23,54 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Header, Footer, Static, Input, Button
 from textual.widgets import TextArea as TA
-from textual.screen import Screen
+from textual.screen import Screen, ModalScreen
 from textual import work
 from textual.binding import Binding
+from textual.reactive import reactive
 
 console = Console()
 
 BACKEND_URL = os.environ.get("NEOSWARM_URL", "http://localhost:8324")
 
-MODELS = [
-    ("sonnet", "Anthropic Sonnet 4.6", "1M"),
-    ("opus", "Anthropic Opus 4.6", "1M"),
-    ("haiku", "Anthropic Haiku 4.5", "200K"),
-    ("llama3.3", "Ollama Llama 3.3", "128K"),
-    ("qwen2.5", "Ollama Qwen 2.5", "128K"),
-]
 
-PROVIDERS = {
-    "sonnet": "anthropic",
-    "opus": "anthropic",
-    "haiku": "anthropic",
-    "llama3.3": "ollama",
-    "qwen2.5": "ollama",
-}
+class ModelPickerScreen(ModalScreen):
+    """Modal screen for selecting a model."""
+
+    def __init__(self, available_models: dict, current_model: str, app_ref, **kwargs):
+        super().__init__(**kwargs)
+        self.available_models = available_models
+        self.current_model = current_model
+        self.app_ref = app_ref
+
+    def compose(self) -> ComposeResult:
+        yield Static("[bold]Select Model[/bold]\n", id="picker-title")
+        idx = 1
+        for provider, models in self.available_models.items():
+            yield Static(f"[bold cyan]{provider}:[/bold cyan]", id=f"header-{provider}")
+            for m in models:
+                label = m.get("label", m.get("value", ""))
+                value = m.get("value", "")
+                is_current = "← current" if value == self.current_model else ""
+                yield Button(f"  {idx}. {label} {is_current}", id=f"model-{idx}", variant="primary" if value == self.current_model else "default")
+                idx += 1
+        yield Static("")
+        yield Button("Cancel", id="cancel-btn", variant="error")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "cancel-btn":
+            self.app.dismiss()
+            return
+        if btn_id and btn_id.startswith("model-"):
+            idx = int(btn_id.split("-")[1])
+            # Find the model at this index
+            all_models = []
+            for provider, models in self.available_models.items():
+                for m in models:
+                    all_models.append({"provider": provider, **m})
+            if 1 <= idx <= len(all_models):
+                selected = all_models[idx - 1]
+                self.app.dismiss(selected)
 
 
 class NeoSwarmTUI(App):
@@ -97,8 +122,10 @@ class NeoSwarmTUI(App):
         self.backend_url = backend_url
         self.session_id: Optional[str] = None
         self.current_model = "sonnet"
+        self.current_provider = "Anthropic"
         self.messages: list[dict] = []
         self.output_text = ""
+        self.available_models: dict = {}
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -110,7 +137,7 @@ class NeoSwarmTUI(App):
                     yield Static("\nTools", id="tools-header")
                     yield Static("• bash\n• write\n• read\n• grep", id="tools-list")
                 with Vertical(id="chat-panel"):
-                    yield Static("[bold]Chat[/bold]", id="chat-header")
+                    yield Static("[bold]Chat[/bold] sonnet", id="chat-header")
                     yield TA(id="chat-history", classes="panel")
                     yield Input(placeholder="Type message...", id="chat-input")
                 with Vertical(id="output-panel"):
@@ -120,6 +147,7 @@ class NeoSwarmTUI(App):
 
     async def on_mount(self) -> None:
         self.connect_backend()
+        await self.fetch_models()
 
     @work
     async def connect_backend(self):
@@ -135,10 +163,24 @@ class NeoSwarmTUI(App):
         except Exception as e:
             self.update_status(f"[red]Offline: {e}[/red]")
 
+    async def fetch_models(self):
+        """Fetch available models from backend."""
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{self.backend_url}/api/agents/models", timeout=10.0
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    self.available_models = data.get("models", {})
+                    self.update_status(f"[green]Loaded {sum(len(v) for v in self.available_models.values())} models[/green]")
+        except Exception as e:
+            self.update_status(f"[yellow]Using defaults[/yellow]")
+
     def update_status(self, status: str):
         try:
             header = self.query_one("#chat-header", Static)
-            header.update(f"[bold]Chat[/bold] {self.current_model} | {status}")
+            header.update(f"[bold]Chat[/bold] {self.current_provider}/{self.current_model} | {status}")
         except Exception:
             pass
 
@@ -147,13 +189,66 @@ class NeoSwarmTUI(App):
         if not message:
             return
         event.input.clear()
+
+        # Handle /model command inline
+        if message.startswith("/model "):
+            self._handle_inline_model(message)
+            return
+
+        if message == "/model":
+            self.action_switch_model()
+            return
+
+        if message in ("/new", "/clear"):
+            self.action_new_session()
+            return
+
         await self.send_message(message)
+
+    def _handle_inline_model(self, message: str):
+        """Handle /model <number> or /model <name> from chat input."""
+        arg = message[7:].strip()
+        if not arg:
+            self.action_switch_model()
+            return
+
+        # Try as number
+        try:
+            idx = int(arg)
+            all_models = []
+            for provider, models in self.available_models.items():
+                for m in models:
+                    all_models.append({"provider": provider, **m})
+            if 1 <= idx <= len(all_models):
+                selected = all_models[idx - 1]
+                self.current_model = selected.get("value", arg)
+                self.current_provider = selected.get("provider", "")
+                self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
+                return
+        except ValueError:
+            pass
+
+        # Try as partial name match
+        for provider, models in self.available_models.items():
+            for m in models:
+                value = m.get("value", "")
+                label = m.get("label", value)
+                if arg.lower() in value.lower() or arg.lower() in label.lower():
+                    self.current_model = value
+                    self.current_provider = provider
+                    self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
+                    return
+
+        self.update_status(f"[red]Model '{arg}' not found. Press ^m for picker.[/red]")
 
     async def send_message(self, message: str):
         chat_history = self.query_one("#chat-history", TA)
         
         self.messages.append({"role": "user", "content": message})
-        chat_history.write(f"[cyan]You:[/cyan] {message}\n")
+        
+        # Append to TextArea using correct API
+        current_text = chat_history.text or ""
+        chat_history.text = current_text + f"You: {message}\n"
 
         if not self.session_id:
             await self.create_session()
@@ -190,7 +285,8 @@ class NeoSwarmTUI(App):
                     self.messages.append({"role": "assistant", "content": response})
                     
                     chat_history = self.query_one("#chat-history", TA)
-                    chat_history.write(f"[green]Neo:[/green] {response}\n")
+                    current_text = chat_history.text or ""
+                    chat_history.text = current_text + f"Neo: {response}\n"
                     output_text.update(response[:500])
         except Exception as e:
             output_text.update(f"[red]Error: {e}[/red]")
@@ -213,9 +309,22 @@ class NeoSwarmTUI(App):
         self.update_sessions_list()
         self.update_status("[cyan]New session[/cyan]")
 
-    def action_switch_model(self):
-        models_short = "\n".join([f"{i+1}. {m[0]}" for i, m in enumerate(MODELS)])
-        self.update_status(f"[cyan]Models: {models_short}[/cyan]")
+    async def action_switch_model(self):
+        """Open the model picker modal."""
+        if not self.available_models:
+            self.update_status("[yellow]No models loaded. Press ^r to refresh.[/yellow]")
+            return
+
+        def handle_result(result):
+            if result:
+                self.current_model = result.get("value", result)
+                self.current_provider = result.get("provider", "")
+                self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
+
+        await self.push_screen_wait(
+            ModelPickerScreen(self.available_models, self.current_model, self.app),
+            handle_result,
+        )
 
     def action_toggle_sidebar(self):
         sidebar = self.query_one("#sidebar")
@@ -227,6 +336,8 @@ class NeoSwarmTUI(App):
 
     def action_refresh(self):
         self.connect_backend()
+        import asyncio
+        asyncio.create_task(self.fetch_models())
 
 
 def run_tui():
