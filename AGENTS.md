@@ -198,7 +198,7 @@ NeoSwarm supports two levels of computer automation:
 | List Models | `/models` | Show available models |
 | Auth | `/connect` | Connect provider |
 | Settings | `/settings` | Configure app |
-| Quit | `^q` | Exit TUI |
+| Command palette | `^p` | Quick actions (/new, /model, /clear, etc.) |
 
 ### Native App Features (Codex-style)
 
@@ -229,12 +229,14 @@ NeoSwarm supports two levels of computer automation:
 
 ### Phase 8: Enhanced TUI (High Priority)
 - [x] Chat panel with message history
-- [x] Model picker (switch mid-conversation)
+- [x] Model picker modal (^m or /model)
+- [x] Command palette (^p) - /new, /model, /clear, /refresh, /sidebar, /help
 - [x] Session management (create, switch, delete)
 - [x] Tool output display
 - [x] Keyboard shortcuts (like OpenCode)
 - [x] Dynamic Ollama model fetching (from /api/tags)
 - [x] GitHub Copilot OAuth Device Flow
+- [x] Provider/model header display
 
 ### Phase 9: Native App Enhancements (Medium Priority)
 - [ ] Full message history
@@ -247,6 +249,11 @@ NeoSwarm supports two levels of computer automation:
 - [ ] Scheduled/automated tasks
 - [ ] More MCP server integrations
 - [ ] Image generation tool
+
+### Phase 11: Standalone Binary (High Priority)
+- [x] Fix backend not spawning for standalone binary (use venv Python path)
+- [x] Comprehensive backend search (resource dir, next to binary, CWD, dev path)
+- [x] Tauri v2 shell scope configuration
 
 ---
 
