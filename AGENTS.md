@@ -41,7 +41,9 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 | Phase 3: Orchestrator Agent | ✅ Complete | Multi-agent coordination |
 | Phase 4: CLI + TUI | ✅ Complete | Basic CLI and TUI |
 | Phase 5: Packaging | ✅ Complete | Tauri app with custom icon |
-| Phase 6: Codex-style Features | 🔄 In Progress | Auth, TUI, memory |
+| Phase 6: Codex-style Features | ✅ Complete | Auth System |
+| Phase 7: Enhanced TUI | ✅ Complete | TUI (OpenCode-style) |
+| Phase 8: Native App Enhancements | 🔄 In Progress | Native App (Codex-style) |
 
 ---
 
@@ -219,17 +221,18 @@ NeoSwarm supports two levels of computer automation:
 ## Implementation Priority
 
 ### Phase 7: Auth System (High Priority)
-- [ ] `neoswarm auth login` command - Interactive provider setup
-- [ ] `auth.json` storage at `~/.neoswarm/auth.json`
-- [ ] Provider status in TUI
-- [ ] Environment variable integration
+- [x] `neoswarm auth login` command - Interactive provider setup
+- [x] Settings storage at `~/.neoswarm/settings.json` (via backend)
+- [x] `neoswarm auth status` - Provider status
+- [x] `neoswarm auth logout` - Remove credentials
+- [x] Environment variable integration (ENV > settings.json > defaults)
 
 ### Phase 8: Enhanced TUI (High Priority)
-- [ ] Chat panel with message history
-- [ ] Model picker (switch mid-conversation)
-- [ ] Session management (create, switch, delete)
-- [ ] Tool output display
-- [ ] Keyboard shortcuts (like OpenCode)
+- [x] Chat panel with message history
+- [x] Model picker (switch mid-conversation)
+- [x] Session management (create, switch, delete)
+- [x] Tool output display
+- [x] Keyboard shortcuts (like OpenCode)
 
 ### Phase 9: Native App Enhancements (Medium Priority)
 - [ ] Full message history
