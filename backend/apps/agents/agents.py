@@ -226,6 +226,7 @@ async def list_models():
     """Return the chat-picker model list grouped by provider.
 
     NeoSwarm uses direct API keys or local Ollama. No subscription routing.
+    Includes dynamic models from Ollama server.
     """
     from backend.apps.agents.providers.registry import BUILTIN_MODELS
     from backend.apps.settings.settings import load_settings
@@ -262,5 +263,36 @@ async def list_models():
             )
         if visible:
             result[provider_name] = visible
+
+    # Fetch dynamic Ollama models from local server
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("http://localhost:11434/api/tags", timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                ollama_models = []
+                for m in data.get("models", []):
+                    name = m.get("name", "")
+                    if name:
+                        size_gb = m.get("size", 0) / (1024**3)
+                        ollama_models.append({
+                            "value": name.split(":")[0].split("-")[0],
+                            "label": f"{name.split(':')[0]} ({size_gb:.1f}GB)",
+                            "context_window": m.get("details", {}).get("context_length", 128_000),
+                            "reasoning": False,
+                        })
+                if ollama_models:
+                    result["Ollama"] = ollama_models
+    except Exception:
+        pass  # Ollama not running
+
+    # Add GitHub Copilot models if token available
+    if settings.copilot_github_token:
+        result["Copilot"] = [
+            {"value": "copilot", "label": "Copilot (Chat)", "context_window": 128_000, "reasoning": False},
+            {"value": "copilot-claude-3.5", "label": "Claude 3.5 Sonnet via Copilot", "context_window": 200_000, "reasoning": False},
+            {"value": "copilot-gpt-4o", "label": "GPT-4o via Copilot", "context_window": 128_000, "reasoning": False},
+        ]
 
     return {"models": result}

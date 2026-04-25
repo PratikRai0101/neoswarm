@@ -158,21 +158,35 @@ def models():
     """Show available models."""
     console.print("[green]🐝 Available Models[/green]\n")
 
-    table = Table(title="Models")
-    table.add_column("Provider", style="cyan")
-    table.add_column("Model", style="green")
-    table.add_column("Context", style="yellow")
+    async def run():
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(f"{get_backend_url()}/api/agents/models", timeout=10.0)
+            except Exception:
+                console.print("[red]Failed to fetch models[/red]")
+                return
+            
+            if resp.status_code != 200:
+                console.print("[red]Failed to fetch models[/red]")
+                return
+            
+            data = resp.json()
+            all_models = data.get("models", {})
+            
+            table = Table(title="Models")
+            table.add_column("Provider", style="cyan")
+            table.add_column("Model", style="green")
+            table.add_column("Context", style="yellow")
 
-    for p, m, context in [
-        ("Anthropic", "claude-sonnet-4-6", "1M"),
-        ("Anthropic", "claude-opus-4-6", "1M"),
-        ("Anthropic", "claude-haiku-4-5", "200K"),
-        ("Ollama", "llama3.3", "128K"),
-        ("Ollama", "qwen2.5", "128K"),
-    ]:
-        table.add_row(p, m, context)
+            for provider, model_list in all_models.items():
+                for m in model_list:
+                    ctx = m.get("context_window", 128_000)
+                    ctx_str = f"{ctx//1000}K" if ctx < 1000000 else f"{ctx//1000000}M"
+                    table.add_row(provider, m.get("label", ""), ctx_str)
 
-    console.print(table)
+            console.print(table)
+
+    asyncio.run(run())
 
 
 @cli.group()
