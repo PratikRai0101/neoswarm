@@ -33,6 +33,33 @@ console = Console()
 BACKEND_URL = os.environ.get("NEOSWARM_URL", "http://localhost:8324")
 
 
+class CommandPaletteScreen(ModalScreen):
+    """Command palette - quick access to actions."""
+
+    def compose(self) -> ComposeResult:
+        yield Static("[bold]Command Palette[/bold]\n", id="palette-title")
+        commands = [
+            ("new", "Start new chat"),
+            ("model", "Switch model"),
+            ("refresh", "Refresh backend"),
+            ("sidebar", "Toggle sidebar"),
+            ("clear", "Clear chat history"),
+            ("help", "Show shortcuts"),
+        ]
+        for cmd_id, desc in commands:
+            yield Button(f"[cyan]/{cmd_id}[/cyan]  —  {desc}", id=f"cmd-{cmd_id}")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "cmd-help":
+            self.app.dismiss("/help")
+            return
+        if btn_id and btn_id.startswith("cmd-"):
+            self.app.dismiss("/" + btn_id[4:])
+        else:
+            self.app.dismiss(None)
+
+
 class ModelPickerScreen(ModalScreen):
     """Modal screen for selecting a model."""
 
@@ -115,6 +142,7 @@ class NeoSwarmTUI(App):
         ("ctrl+s", "toggle_sidebar", "Sidebar"),
         ("ctrl+r", "refresh", "Refresh"),
         ("ctrl+a", "toggle_output", "Output"),
+        ("ctrl+p", "command_palette", "palette"),
     ]
 
     def __init__(self, backend_url: str = BACKEND_URL):
@@ -192,11 +220,11 @@ class NeoSwarmTUI(App):
 
         # Handle /model command inline
         if message.startswith("/model "):
-            self._handle_inline_model(message)
+            await self._handle_inline_model(message)
             return
 
         if message == "/model":
-            self.action_switch_model()
+            asyncio.create_task(self.action_switch_model())
             return
 
         if message in ("/new", "/clear"):
@@ -205,11 +233,11 @@ class NeoSwarmTUI(App):
 
         await self.send_message(message)
 
-    def _handle_inline_model(self, message: str):
+    async def _handle_inline_model(self, message: str):
         """Handle /model <number> or /model <name> from chat input."""
         arg = message[7:].strip()
         if not arg:
-            self.action_switch_model()
+            await self.action_switch_model()
             return
 
         # Try as number
@@ -309,13 +337,44 @@ class NeoSwarmTUI(App):
         self.update_sessions_list()
         self.update_status("[cyan]New session[/cyan]")
 
+    async def action_command_palette(self):
+        async def handle(cmd):
+            if not cmd:
+                return
+            if cmd == "/new" or cmd == "/clear":
+                self.action_new_session()
+            elif cmd == "/model":
+                await self.action_switch_model()
+            elif cmd == "/refresh":
+                self.action_refresh()
+            elif cmd == "/sidebar":
+                self.action_toggle_sidebar()
+            elif cmd == "/help":
+                self.show_help()
+        await self.push_screen_wait(CommandPaletteScreen(), handle)
+
+    def show_help(self):
+        help_text = (
+            "[bold]NeoSwarm TUI Shortcuts:[/bold]\n"
+            "^n   New chat\n"
+            "^m   Switch model\n"
+            "^s   Toggle sidebar\n"
+            "^r   Refresh backend\n"
+            "^a   Toggle output panel\n"
+            "^p   Command palette\n"
+            "/model <n>   Select model by number\n"
+            "/new   New session\n"
+            "/clear   Clear chat"
+        )
+        self.update_status(help_text)
+
     async def action_switch_model(self):
         """Open the model picker modal."""
         if not self.available_models:
             self.update_status("[yellow]No models loaded. Press ^r to refresh.[/yellow]")
             return
 
-        def handle_result(result):
+        async def handle_result(result):
             if result:
                 self.current_model = result.get("value", result)
                 self.current_provider = result.get("provider", "")
@@ -333,6 +392,54 @@ class NeoSwarmTUI(App):
     def action_toggle_output(self):
         output = self.query_one("#output-panel")
         output.display = not output.display
+
+    async def action_switch_model(self):
+        """Open the model picker modal."""
+        if not self.available_models:
+            self.update_status("[yellow]No models loaded. Press ^r to refresh.[/yellow]")
+            return
+
+        async def handle_result(result):
+            if result:
+                self.current_model = result.get("value", result)
+                self.current_provider = result.get("provider", "")
+                self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
+
+        await self.push_screen_wait(
+            ModelPickerScreen(self.available_models, self.current_model, self.app),
+            handle_result,
+        )
+
+    async def action_command_palette(self):
+        async def handle(cmd):
+            if not cmd:
+                return
+            if cmd in ("/new", "/clear"):
+                self.action_new_session()
+            elif cmd == "/model":
+                await self.action_switch_model()
+            elif cmd == "/refresh":
+                self.action_refresh()
+            elif cmd == "/sidebar":
+                self.action_toggle_sidebar()
+            elif cmd == "/help":
+                self.show_help()
+        await self.push_screen_wait(CommandPaletteScreen(), handle)
+
+    def show_help(self):
+        help_text = (
+            "[bold]NeoSwarm TUI Shortcuts:[/bold]\n"
+            "^n   New chat\n"
+            "^m   Switch model\n"
+            "^s   Toggle sidebar\n"
+            "^r   Refresh backend\n"
+            "^a   Toggle output panel\n"
+            "^p   Command palette\n"
+            "/model <n>   Select model by number\n"
+            "/new   New session\n"
+            "/clear   Clear chat"
+        )
+        self.update_status(help_text)
 
     def action_refresh(self):
         self.connect_backend()
