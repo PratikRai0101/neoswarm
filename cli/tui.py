@@ -385,37 +385,29 @@ class NeoSwarmTUI(App):
         output.display = not output.display
 
     async def action_switch_model(self):
-        """Open the model picker modal."""
+        """Show available models in status area."""
         if not self.available_models:
             self.update_status("[yellow]No models loaded. Press ^r to refresh.[/yellow]")
             return
 
-        async def handle_result(result):
-            if result:
-                self.current_model = result.get("value", result)
-                self.current_provider = result.get("provider", "")
-                self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
+        lines = ["[bold]Available Models:[/bold]"]
+        idx = 1
+        for provider, models in self.available_models.items():
+            lines.append(f"[cyan]{provider}:[/cyan]")
+            for m in models[:5]:
+                lines.append(f"  {idx}. {m.get('label', m.get('value', ''))}")
+                idx += 1
+            if len(models) > 5:
+                lines.append(f"  ... and {len(models) - 5} more")
+            idx += 1
+            lines.append("")
 
-        await self.push_screen_wait(
-            ModelPickerScreen(self.available_models, self.current_model, self.app),
-            handle_result,
-        )
+        lines.append("Type /model <number> to select (e.g., /model 1)")
+        self.update_status("\n".join(lines[:15]))
 
-    async def action_command_palette(self):
-        async def handle(cmd):
-            if not cmd:
-                return
-            if cmd in ("/new", "/clear"):
-                self.action_new_session()
-            elif cmd == "/model":
-                await self.action_switch_model()
-            elif cmd == "/refresh":
-                self.action_refresh()
-            elif cmd == "/sidebar":
-                self.action_toggle_sidebar()
-            elif cmd == "/help":
-                self.show_help()
-        await self.push_screen_wait(CommandPaletteScreen(), handle)
+    def action_command_palette(self):
+        """Show help - same as pressing ^p."""
+        self.show_help()
 
     def show_help(self):
         help_text = (
