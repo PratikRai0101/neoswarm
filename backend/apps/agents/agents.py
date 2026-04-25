@@ -289,24 +289,33 @@ async def list_models():
 
     # Known Copilot-specific models (not in public API)
     COPILOT_KNOWN_MODELS = [
-        # Anthropic models
+        # Anthropic models (latest from GitHub Copilot docs)
         {"value": "anthropic/claude-opus-4-7", "label": "Claude Opus 4.7 (Anthropic)", "context_window": 200_000, "reasoning": True},
         {"value": "anthropic/claude-opus-4-6", "label": "Claude Opus 4.6 (Anthropic)", "context_window": 200_000, "reasoning": True},
+        {"value": "anthropic/claude-opus-4-5", "label": "Claude Opus 4.5 (Anthropic)", "context_window": 200_000, "reasoning": True},
         {"value": "anthropic/claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (Anthropic)", "context_window": 200_000, "reasoning": False},
         {"value": "anthropic/claude-sonnet-4-5", "label": "Claude Sonnet 4.5 (Anthropic)", "context_window": 200_000, "reasoning": False},
+        {"value": "anthropic/claude-sonnet-4", "label": "Claude Sonnet 4 (Anthropic)", "context_window": 200_000, "reasoning": False},
         {"value": "anthropic/claude-haiku-4-5", "label": "Claude Haiku 4.5 (Anthropic)", "context_window": 200_000, "reasoning": False},
         # Google models
         {"value": "google/gemini-2-5-pro", "label": "Gemini 2.5 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
-        {"value": "google/gemini-2-0-flash", "label": "Gemini 2.0 Flash (Google)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "google/gemini-2-5-flash", "label": "Gemini 2.5 Flash (Google)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "google/gemini-3-5-pro", "label": "Gemini 3.5 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
         {"value": "google/gemini-3-pro", "label": "Gemini 3 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "google/gemini-3-flash", "label": "Gemini 3 Flash (Google)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "google/gemini-2-flash", "label": "Gemini 2.0 Flash (Google)", "context_window": 1_000_000, "reasoning": False},
         # xAI Grok
         {"value": "xai/grok-3", "label": "Grok 3 (xAI)", "context_window": 131_072, "reasoning": True},
         {"value": "xai/grok-3-mini", "label": "Grok 3 Mini (xAI)", "context_window": 131_072, "reasoning": True},
-        # Newer OpenAI (not in public API yet)
+        {"value": "xai/grok-2", "label": "Grok 2 (xAI)", "context_window": 131_072, "reasoning": True},
+        {"value": "xai/grok-2-mini", "label": "Grok 2 Mini (xAI)", "context_window": 131_072, "reasoning": True},
+        # Newer OpenAI (GPT-5.x series)
         {"value": "openai/gpt-5-4", "label": "GPT-5.4 (OpenAI)", "context_window": 200_000, "reasoning": True},
         {"value": "openai/gpt-5-4-mini", "label": "GPT-5.4 Mini (OpenAI)", "context_window": 200_000, "reasoning": True},
-        {"value": "openai/gpt-5-2-codex", "label": "GPT-5.2 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
         {"value": "openai/gpt-5-3-codex", "label": "GPT-5.3 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
+        {"value": "openai/gpt-5-2-codex", "label": "GPT-5.2 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
+        {"value": "openai/gpt-5-1-codex", "label": "GPT-5.1 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
+        {"value": "openai/gpt-5", "label": "GPT-5 (OpenAI)", "context_window": 200_000, "reasoning": True},
     ]
 
     # Fetch GitHub Copilot models if token available
