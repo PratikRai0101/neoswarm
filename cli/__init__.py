@@ -201,33 +201,68 @@ def login(provider: Optional[str], api_key: Optional[str]):
         provider = providers[choice - 1]
 
     if provider == "copilot":
-        console.print("[cyan]GitHub Copilot Authentication[/cyan]\n")
-        console.print("[yellow]Option 1:[/yellow] Enter token manually (ghp_... or github_pat_...)")
-        console.print("[yellow]Option 2:[/yellow] OAuth device flow (requires registered OAuth app)\n")
+        client_id = "Ov23liLDz3MEPhK1969Z"
+        console.print("[cyan]Starting GitHub device flow authentication...[/cyan]\n")
         
-        choice = click.prompt("Use option (1/2)", type=int, default=1)
-        
-        if choice == 1:
-            token = click.prompt("Enter GitHub token", hide_input=True)
-            if not token:
-                console.print("[red]Token required[/red]")
-                return
-            
-            async def run():
-                async with httpx.AsyncClient() as client:
-                    resp = await client.put(
-                        f"{get_backend_url()}/api/settings",
-                        json={"copilot_github_token": token},
-                    )
+        async def run():
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://github.com/login/device/code",
+                    data={"client_id": client_id, "scope": "copilot"},
+                    headers={"Accept": "application/json"},
+                )
+                if resp.status_code != 200:
+                    console.print(f"[red]Failed: {resp.status_code}[/red]")
+                    return
+                
+                data = resp.json()
+                device_code = data["device_code"]
+                user_code = data["user_code"]
+                verification_uri = data["verification_uri"]
+                interval = int(data.get("interval", 5))
+                
+                console.print(f"\n[yellow]Step 1:[/yellow] Visit: {verification_uri}")
+                console.print(f"[yellow]Step 2:[/yellow] Enter code: [bold cyan]{user_code}[/bold cyan]\n")
+                console.print("[dim]Waiting for authentication...[/dim]\n")
+                
+                import webbrowser
+                webbrowser.open(verification_uri)
+                
+                for i in range(120):
+                    await asyncio.sleep(interval)
+                    try:
+                        resp = await client.post(
+                            "https://github.com/login/oauth/access_token",
+                            data={
+                                "client_id": client_id,
+                                "device_code": device_code,
+                                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                            },
+                            headers={"Accept": "application/json"},
+                        )
+                    except Exception:
+                        continue
+                    
                     if resp.status_code == 200:
-                        console.print("[green]✓ GitHub Copilot connected[/green]")
-                    else:
-                        console.print("[red]Failed to save token[/red]")
-            asyncio.run(run())
-            return
+                        token_data = resp.json()
+                        if "access_token" in token_data:
+                            access_token = token_data["access_token"]
+                            
+                            await client.put(
+                                f"{get_backend_url()}/api/settings",
+                                json={"copilot_github_token": access_token},
+                            )
+                            console.print(f"[green]✓ GitHub Copilot authenticated![/green]")
+                            return
+                        
+                        error = token_data.get("error", "")
+                        if error in ["expired_token", "slow_down"]:
+                            console.print("[red]Authentication expired. Try again.[/red]")
+                            return
+                
+                console.print("[red]Authentication timed out. Try again.[/red]")
         
-        console.print("[yellow]Note: OAuth device flow requires OAuth app registration.[/yellow]")
-        console.print("[dim]Register at: https://github.com/settings/developers[/dim]")
+        asyncio.run(run())
         return
 
     if not api_key and provider != "ollama":
