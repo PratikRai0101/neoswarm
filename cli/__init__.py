@@ -195,9 +195,28 @@ def login(provider: Optional[str], api_key: Optional[str]):
         console.print("  3. google     - Google (Gemini)")
         console.print("  4. ollama     - Ollama (local)")
         console.print("  5. openrouter - OpenRouter")
+        console.print("  6. copilot    - GitHub Copilot")
         choice = click.prompt("Enter choice", type=int, default=1, show_default=False)
-        providers = ["anthropic", "openai", "google", "ollama", "openrouter"]
+        providers = ["anthropic", "openai", "google", "ollama", "openrouter", "copilot"]
         provider = providers[choice - 1]
+
+    if provider == "copilot":
+        token = api_key or click.prompt("Enter GitHub token (ghp_...)", hide_input=True)
+        if not token:
+            console.print("[red]Token required[/red]")
+            return
+        async def run():
+            async with httpx.AsyncClient() as client:
+                resp = await client.put(
+                    f"{get_backend_url()}/api/settings",
+                    json={"copilot_github_token": token}
+                )
+                if resp.status_code == 200:
+                    console.print("[green]✓ GitHub Copilot connected[/green]")
+                else:
+                    console.print("[red]Failed to save token[/red]")
+        asyncio.run(run())
+        return
 
     if not api_key and provider != "ollama":
         api_key = click.prompt(f"Enter API key for {provider}", hide_input=True)
@@ -249,7 +268,7 @@ def logout(provider: Optional[str]):
 
     if not provider:
         console.print("[yellow]Which provider to disconnect?[/yellow]")
-        console.print("  anthropic, openai, google, ollama, openrouter")
+        console.print("  anthropic, openai, google, ollama, openrouter, copilot")
         console.print("[dim]Use: neoswarm auth logout -p PROVIDER[/dim]")
         return
 
@@ -259,7 +278,26 @@ def logout(provider: Optional[str]):
         "google": "google_api_key",
         "openrouter": "openrouter_api_key",
     }
+
+    if provider == "copilot":
+        async def run():
+            async with httpx.AsyncClient() as client:
+                resp = await client.put(
+                    f"{get_backend_url()}/api/settings",
+                    json={"copilot_github_token": None}
+                )
+                if resp.status_code == 200:
+                    console.print("[green]✓ Copilot disconnected[/green]")
+                else:
+                    console.print("[red]Failed[/red]")
+        asyncio.run(run())
+        return
+
     key = provider_key_map.get(provider, "")
+
+    if not key:
+        console.print(f"[red]Unknown provider: {provider}[/red]")
+        return
 
     async def run():
         if not await check_backend():
@@ -301,6 +339,7 @@ def status():
                     ("Google", bool(settings.get("google_api_key"))),
                     ("OpenRouter", bool(settings.get("openrouter_api_key"))),
                     ("Ollama", True),
+                    ("Copilot", bool(settings.get("copilot_github_token"))),
                 ]
                 default_model = settings.get("default_model", "sonnet")
 
