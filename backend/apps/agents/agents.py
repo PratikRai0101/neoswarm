@@ -287,35 +287,36 @@ async def list_models():
     except Exception:
         pass  # Ollama not running
 
-    # Known Copilot-specific models (not in public API)
+    # Known Copilot-specific models (from GitHub docs)
     COPILOT_KNOWN_MODELS = [
-        # Anthropic models (latest from GitHub Copilot docs)
-        {"value": "anthropic/claude-opus-4-7", "label": "Claude Opus 4.7 (Anthropic)", "context_window": 200_000, "reasoning": True},
-        {"value": "anthropic/claude-opus-4-6", "label": "Claude Opus 4.6 (Anthropic)", "context_window": 200_000, "reasoning": True},
-        {"value": "anthropic/claude-opus-4-5", "label": "Claude Opus 4.5 (Anthropic)", "context_window": 200_000, "reasoning": True},
-        {"value": "anthropic/claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (Anthropic)", "context_window": 200_000, "reasoning": False},
-        {"value": "anthropic/claude-sonnet-4-5", "label": "Claude Sonnet 4.5 (Anthropic)", "context_window": 200_000, "reasoning": False},
+        # OpenAI models (from GitHub Copilot docs)
+        {"value": "openai/gpt-4.1", "label": "GPT-4.1 (OpenAI)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "openai/gpt-5-mini", "label": "GPT-5 Mini (OpenAI)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "openai/gpt-5.2", "label": "GPT-5.2 (OpenAI)", "context_window": 1_000_000, "reasoning": True},
+        {"value": "openai/gpt-5.2-codex", "label": "GPT-5.2 Codex (OpenAI)", "context_window": 1_000_000, "reasoning": True},
+        {"value": "openai/gpt-5.3-codex", "label": "GPT-5.3 Codex (OpenAI)", "context_window": 1_000_000, "reasoning": True},
+        {"value": "openai/gpt-5.4", "label": "GPT-5.4 (OpenAI)", "context_window": 1_000_000, "reasoning": True},
+        {"value": "openai/gpt-5.4-mini", "label": "GPT-5.4 Mini (OpenAI)", "context_window": 1_000_000, "reasoning": True},
+        {"value": "openai/gpt-5.4-nano", "label": "GPT-5.4 Nano (OpenAI)", "context_window": 1_000_000, "reasoning": True},
+        {"value": "openai/gpt-5.5", "label": "GPT-5.5 (OpenAI)", "context_window": 1_000_000, "reasoning": True},
+        # Anthropic models (from GitHub Copilot docs)
+        {"value": "anthropic/claude-haiku-4.5", "label": "Claude Haiku 4.5 (Anthropic)", "context_window": 200_000, "reasoning": False},
+        {"value": "anthropic/claude-sonnet-4.5", "label": "Claude Sonnet 4.5 (Anthropic)", "context_window": 200_000, "reasoning": False},
+        {"value": "anthropic/claude-opus-4.5", "label": "Claude Opus 4.5 (Anthropic)", "context_window": 200_000, "reasoning": True},
+        {"value": "anthropic/claude-opus-4.6", "label": "Claude Opus 4.6 (Anthropic)", "context_window": 200_000, "reasoning": True},
+        {"value": "anthropic/claude-opus-4.6-fast", "label": "Claude Opus 4.6 Fast (Anthropic)", "context_window": 200_000, "reasoning": True},
+        {"value": "anthropic/claude-opus-4.7", "label": "Claude Opus 4.7 (Anthropic)", "context_window": 200_000, "reasoning": True},
         {"value": "anthropic/claude-sonnet-4", "label": "Claude Sonnet 4 (Anthropic)", "context_window": 200_000, "reasoning": False},
-        {"value": "anthropic/claude-haiku-4-5", "label": "Claude Haiku 4.5 (Anthropic)", "context_window": 200_000, "reasoning": False},
-        # Google models
-        {"value": "google/gemini-2-5-pro", "label": "Gemini 2.5 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
-        {"value": "google/gemini-2-5-flash", "label": "Gemini 2.5 Flash (Google)", "context_window": 1_000_000, "reasoning": False},
-        {"value": "google/gemini-3-5-pro", "label": "Gemini 3.5 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
-        {"value": "google/gemini-3-pro", "label": "Gemini 3 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "anthropic/claude-sonnet-4.6", "label": "Claude Sonnet 4.6 (Anthropic)", "context_window": 200_000, "reasoning": False},
+        # Google models (from GitHub Copilot docs)
+        {"value": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
         {"value": "google/gemini-3-flash", "label": "Gemini 3 Flash (Google)", "context_window": 1_000_000, "reasoning": False},
-        {"value": "google/gemini-2-flash", "label": "Gemini 2.0 Flash (Google)", "context_window": 1_000_000, "reasoning": False},
-        # xAI Grok
-        {"value": "xai/grok-3", "label": "Grok 3 (xAI)", "context_window": 131_072, "reasoning": True},
-        {"value": "xai/grok-3-mini", "label": "Grok 3 Mini (xAI)", "context_window": 131_072, "reasoning": True},
-        {"value": "xai/grok-2", "label": "Grok 2 (xAI)", "context_window": 131_072, "reasoning": True},
-        {"value": "xai/grok-2-mini", "label": "Grok 2 Mini (xAI)", "context_window": 131_072, "reasoning": True},
-        # Newer OpenAI (GPT-5.x series)
-        {"value": "openai/gpt-5-4", "label": "GPT-5.4 (OpenAI)", "context_window": 200_000, "reasoning": True},
-        {"value": "openai/gpt-5-4-mini", "label": "GPT-5.4 Mini (OpenAI)", "context_window": 200_000, "reasoning": True},
-        {"value": "openai/gpt-5-3-codex", "label": "GPT-5.3 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
-        {"value": "openai/gpt-5-2-codex", "label": "GPT-5.2 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
-        {"value": "openai/gpt-5-1-codex", "label": "GPT-5.1 Codex (OpenAI)", "context_window": 200_000, "reasoning": True},
-        {"value": "openai/gpt-5", "label": "GPT-5 (OpenAI)", "context_window": 200_000, "reasoning": True},
+        {"value": "google/gemini-3.1-pro", "label": "Gemini 3.1 Pro (Google)", "context_window": 1_000_000, "reasoning": False},
+        # xAI models (from GitHub Copilot docs)
+        {"value": "xai/grok-code-fast-1", "label": "Grok Code Fast 1 (xAI)", "context_window": 131_072, "reasoning": True},
+        # Microsoft fine-tuned models (from GitHub Copilot docs)
+        {"value": "microsoft/raptor-mini", "label": "Raptor Mini (Microsoft)", "context_window": 1_000_000, "reasoning": False},
+        {"value": "microsoft/goldeneye", "label": "Goldeneye (Microsoft)", "context_window": 1_000_000, "reasoning": True},
     ]
 
     # Fetch GitHub Copilot models if token available
