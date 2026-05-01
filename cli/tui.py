@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""NeoSwarm TUI - Raycast-style terminal UI for your AI agent swarm."""
+"""NeoSwarm TUI - OpenCode-style terminal UI with unified command center."""
 
 import asyncio
 import os
 from typing import Optional
 
 import httpx
-from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Header, Footer, Static, Input, Button, ListView, ListItem
@@ -18,36 +17,37 @@ from textual.binding import Binding
 BACKEND_URL = os.environ.get("NEOSWARM_URL", "http://localhost:8324")
 
 
-class ModelPickerScreen(ModalScreen):
-    """Raycast-style floating model picker with search."""
+class CommandCenter(ModalScreen):
+    """Unified Raycast-style command center — type to search models & commands."""
 
     CSS = """
-    ModelPickerScreen {
+    CommandCenter {
         align: center middle;
         background: rgba(0,0,0,0.7);
     }
-    #picker-box {
-        width: 50;
-        height: 22;
-        border: solid $primary;
+    #cc-box {
+        width: 60;
+        height: 24;
+        border: solid $accent;
         background: $surface;
         layer: overlay;
     }
-    #picker-title {
+    #cc-title {
         background: $primary;
         color: $text;
         text-align: center;
         padding: 1 0;
+        text-style: bold;
     }
-    #search-input {
+    #cc-input {
         dock: top;
+        margin: 1;
+    }
+    #cc-results {
+        height: 16;
         margin: 0 1;
     }
-    #model-list {
-        height: 14;
-        margin: 0 1;
-    }
-    #picker-footer {
+    #cc-footer {
         text-align: center;
         color: $text-disabled;
         padding: 0 1;
@@ -55,70 +55,90 @@ class ModelPickerScreen(ModalScreen):
     ListItem {
         padding: 0 1;
     }
-    ListItem > .current {
-        background: $accent;
-        color: $text;
-    }
     ListItem:hover {
         background: $boost;
     }
     """
 
+    COMMANDS = [
+        ("/new", "Start new chat", "blue"),
+        ("/clear", "Clear chat history", "blue"),
+        ("/refresh", "Refresh backend", "blue"),
+        ("/sidebar", "Toggle sidebar", "blue"),
+        ("/output", "Toggle output panel", "blue"),
+    ]
+
     def __init__(self, available_models: dict, current_model: str, **kwargs):
         super().__init__(**kwargs)
-        self.all_models = []
-        for provider, models in available_models.items():
-            for m in models:
-                self.all_models.append({
-                    "provider": provider,
-                    "value": m.get("value", ""),
-                    "label": m.get("label", m.get("value", "")),
-                })
         self.current_model = current_model
-        self.filtered: list = list(self.all_models)
+        self.all_entries: list[dict] = []
+        for provider, models in available_models.items():
+            color = {"Ollama": "green", "GitHub Models": "yellow", "Copilot": "cyan"}.get(provider, "white")
+            for m in models:
+                self.all_entries.append({
+                    "type": "model",
+                    "label": m.get("label", m.get("value", "")),
+                    "value": m.get("value", ""),
+                    "provider": provider,
+                    "color": color,
+                    "data": {"provider": provider, **m},
+                })
+        for cmd, desc, color in self.COMMANDS:
+            self.all_entries.append({
+                "type": "cmd",
+                "label": f"{cmd}  —  {desc}",
+                "value": cmd,
+                "provider": "",
+                "color": color,
+                "data": cmd,
+            })
+        self.filtered: list = list(self.all_entries)
 
     def compose(self) -> ComposeResult:
         yield Container(
-            Static("[bold]Select Model[/bold]", id="picker-title"),
-            Input(placeholder="Search models...", id="search-input"),
-            ListView(id="model-list"),
-            Static("↑↓ navigate · enter select · esc cancel", id="picker-footer"),
-            id="picker-box",
+            Static("🔍  Command Center  (type to search)", id="cc-title"),
+            Input(placeholder="Search models or commands...", id="cc-input"),
+            ListView(id="cc-results"),
+            Static("↑↓ navigate · enter select · esc cancel", id="cc-footer"),
+            id="cc-box",
         )
 
     async def on_mount(self) -> None:
-        await self.refresh_list()
-        self.query_one("#search-input", Input).focus()
+        await self._refresh()
+        self.query_one("#cc-input", Input).focus()
 
-    async def refresh_list(self, query: str = "") -> None:
-        q = query.lower()
-        self.filtered = [m for m in self.all_models if not q or q in m["value"].lower() or q in m["label"].lower()]
+    async def _refresh(self, query: str = "") -> None:
+        q = query.lower().strip()
+        self.filtered = [
+            e for e in self.all_entries
+            if not q or q in e["label"].lower() or q in e["value"].lower()
+        ]
 
-        list_view = self.query_one("#model-list", ListView)
+        list_view = self.query_one("#cc-results", ListView)
         list_view.clear()
         last_provider = None
-        for m in self.filtered:
-            label = m["label"]
-            if m["provider"] != last_provider:
-                list_view.append(ListItem(Static(f"\n[bold cyan]{m['provider']}[/bold cyan]", classes="provider-header")))
-                last_provider = m["provider"]
-            marker = " ▶ " if m["value"] == self.current_model else "   "
-            list_view.append(ListItem(Static(f"{marker}{label}")))
+
+        for e in self.filtered:
+            if e["type"] == "model":
+                if e["provider"] != last_provider:
+                    list_view.append(ListItem(Static(f"\n[bold {e['color']}]{e['provider']}[/bold {e['color']}]", classes="cc-header")))
+                    last_provider = e["provider"]
+                marker = "▶ " if e["value"] == self.current_model else "  "
+                list_view.append(ListItem(Static(f"  {marker}[{e['color']}]◆[/{e['color']}] {e['label']}")))
+            else:
+                if last_provider is not None:
+                    last_provider = None
+                    list_view.append(ListItem(Static("")))
+                list_view.append(ListItem(Static(f"  [{e['color']}]/[/{e['color']}] {e['label']}")))
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        asyncio.create_task(self.refresh_list(event.value))
+        asyncio.create_task(self._refresh(event.value))
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if not self.filtered:
             return
         idx = event.list_view.index
-        # Subtract provider headers to get real model index
-        real_idx = 0
-        for i in range(len(self.filtered)):
-            if i == idx:
-                self.dismiss(self.filtered[real_idx])
-                return
-            real_idx += 1
+        self.dismiss(self.filtered[idx]["data"])
 
     def on_key(self, event) -> None:
         if event.key == "escape":
@@ -126,7 +146,7 @@ class ModelPickerScreen(ModalScreen):
 
 
 class NeoSwarmTUI(App):
-    """NeoSwarm Terminal UI - OpenCode/Raycast inspired."""
+    """NeoSwarm Terminal UI — OpenCode-style command center."""
 
     CSS = """
     Screen { background: $surface; }
@@ -140,7 +160,7 @@ class NeoSwarmTUI(App):
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+n", "new_session", "New Chat"),
-        ("ctrl+m", "switch_model", "Model"),
+        ("ctrl+m", "command_center", "Command Center"),
         ("ctrl+s", "toggle_sidebar", "Sidebar"),
         ("ctrl+r", "refresh", "Refresh"),
         ("ctrl+a", "toggle_output", "Output"),
@@ -166,7 +186,7 @@ class NeoSwarmTUI(App):
                     yield Static("• bash\n• write\n• read\n• grep", id="tools-list")
                 with Vertical(id="chat-panel"):
                     yield Static("[bold]Chat[/bold] sonnet", id="chat-header")
-                    yield TA(id="chat-history", classes="panel")
+                    yield TA(id="chat-history")
                     yield Input(placeholder="Type message or /model <n>...", id="chat-input")
                 with Vertical(id="output-panel"):
                     yield Static("[bold]Output[/bold]", id="output-header")
@@ -213,19 +233,26 @@ class NeoSwarmTUI(App):
         if message.startswith("/model "):
             await self._handle_inline_model(message)
             return
-        if message == "/model":
-            asyncio.create_task(self.action_switch_model())
-            return
-        if message in ("/new", "/clear"):
-            self.action_new_session()
+        if message in ("/model", "/new", "/clear", "/refresh", "/sidebar", "/output"):
+            self._handle_command(message)
             return
 
         await self.send_message(message)
 
+    def _handle_command(self, cmd: str):
+        {
+            "/model": lambda: asyncio.create_task(self.action_command_center()),
+            "/new": lambda: self.action_new_session(),
+            "/clear": lambda: self.action_new_session(),
+            "/refresh": lambda: self.action_refresh(),
+            "/sidebar": lambda: self.action_toggle_sidebar(),
+            "/output": lambda: self.action_toggle_output(),
+        }.get(cmd, lambda: None)()
+
     async def _handle_inline_model(self, message: str):
         arg = message[7:].strip()
         if not arg:
-            await self.action_switch_model()
+            await self.action_command_center()
             return
 
         try:
@@ -302,25 +329,19 @@ class NeoSwarmTUI(App):
         self.update_sessions_list()
         self.update_status("[cyan]New session[/cyan]")
 
-    async def action_switch_model(self):
+    async def action_command_center(self):
         if not self.available_models:
             self.update_status("[yellow]No models loaded. Press ^r to refresh.[/yellow]")
             return
-        result = await self.push_screen_wait(ModelPickerScreen(self.available_models, self.current_model))
-        if result:
+        result = await self.push_screen_wait(CommandCenter(self.available_models, self.current_model))
+        if result is None:
+            return
+        if isinstance(result, dict):
             self.current_model = result.get("value", result)
             self.current_provider = result.get("provider", "")
             self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
-
-    def action_command_palette(self):
-        self.show_help()
-
-    def show_help(self):
-        self.update_status(
-            "[bold]NeoSwarm TUI Shortcuts:[/bold]\n"
-            "^n  New chat  ^m  Model picker  ^s  Sidebar\n"
-            "^r  Refresh   ^a  Toggle output  /model <n>  Select\n"
-        )
+        elif isinstance(result, str):
+            self._handle_command(result)
 
     def action_toggle_sidebar(self):
         self.query_one("#sidebar").display = not self.query_one("#sidebar").display
