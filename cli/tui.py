@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NeoSwarm TUI - OpenCode-style terminal UI with unified command center."""
+"""NeoSwarm TUI — OpenCode-style terminal UI with live session management."""
 
 import asyncio
 import os
@@ -8,7 +8,7 @@ from typing import Optional
 import httpx
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, Input, Button, ListView, ListItem
+from textual.widgets import Header, Footer, Static, Input, ListView, ListItem, Label
 from textual.widgets import TextArea as TA
 from textual.screen import ModalScreen
 from textual import work
@@ -21,43 +21,14 @@ class CommandCenter(ModalScreen):
     """Unified Raycast-style command center — type to search models & commands."""
 
     CSS = """
-    CommandCenter {
-        align: center middle;
-        background: rgba(0,0,0,0.7);
-    }
-    #cc-box {
-        width: 60;
-        height: 24;
-        border: solid $accent;
-        background: $surface;
-        layer: overlay;
-    }
-    #cc-title {
-        background: $primary;
-        color: $text;
-        text-align: center;
-        padding: 1 0;
-        text-style: bold;
-    }
-    #cc-input {
-        dock: top;
-        margin: 1;
-    }
-    #cc-results {
-        height: 16;
-        margin: 0 1;
-    }
-    #cc-footer {
-        text-align: center;
-        color: $text-disabled;
-        padding: 0 1;
-    }
-    ListItem {
-        padding: 0 1;
-    }
-    ListItem:hover {
-        background: $boost;
-    }
+    CommandCenter { align: center middle; background: rgba(0,0,0,0.7); }
+    #cc-box { width: 60; height: 24; border: solid $accent; background: $surface; }
+    #cc-title { background: $primary; color: $text; text-align: center; padding: 1 0; text-style: bold; }
+    #cc-input { dock: top; margin: 1; }
+    #cc-results { height: 16; margin: 0 1; }
+    #cc-footer { text-align: center; color: $text-disabled; padding: 0 1; }
+    ListItem { padding: 0 1; }
+    ListItem:hover { background: $boost; }
     """
 
     COMMANDS = [
@@ -109,19 +80,14 @@ class CommandCenter(ModalScreen):
 
     async def _refresh(self, query: str = "") -> None:
         q = query.lower().strip()
-        self.filtered = [
-            e for e in self.all_entries
-            if not q or q in e["label"].lower() or q in e["value"].lower()
-        ]
-
+        self.filtered = [e for e in self.all_entries if not q or q in e["label"].lower() or q in e["value"].lower()]
         list_view = self.query_one("#cc-results", ListView)
         list_view.clear()
         last_provider = None
-
         for e in self.filtered:
             if e["type"] == "model":
                 if e["provider"] != last_provider:
-                    list_view.append(ListItem(Static(f"\n[bold {e['color']}]{e['provider']}[/bold {e['color']}]", classes="cc-header")))
+                    list_view.append(ListItem(Static(f"\n[bold {e['color']}]{e['provider']}[/bold {e['color']}]")))
                     last_provider = e["provider"]
                 marker = "▶ " if e["value"] == self.current_model else "  "
                 list_view.append(ListItem(Static(f"  {marker}[{e['color']}]◆[/{e['color']}] {e['label']}")))
@@ -137,8 +103,7 @@ class CommandCenter(ModalScreen):
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if not self.filtered:
             return
-        idx = event.list_view.index
-        self.dismiss(self.filtered[idx]["data"])
+        self.dismiss(self.filtered[event.list_view.index]["data"])
 
     def on_key(self, event) -> None:
         if event.key == "escape":
@@ -146,15 +111,20 @@ class CommandCenter(ModalScreen):
 
 
 class NeoSwarmTUI(App):
-    """NeoSwarm Terminal UI — OpenCode-style command center."""
+    """NeoSwarm Terminal UI — OpenCode-style with live session management."""
 
     CSS = """
     Screen { background: $surface; }
     #main { height: 100%; }
-    #sidebar { width: 25; border: solid cyan; background: $panel; }
+    #sidebar { width: 28; border: solid cyan; background: $panel; }
+    #sidebar Label { padding: 0 1; text-style: bold; }
     #chat-panel { border: solid green; }
     #output-panel { border: solid yellow; }
     #chat-input { dock: bottom; height: 3; }
+    #sessions-list { height: 8; margin: 0 1; }
+    #sessions-list ListItem { padding: 0 1; }
+    #sessions-list ListItem:hover { background: $boost; }
+    .active-session { background: $accent; color: $text; }
     """
 
     BINDINGS = [
@@ -174,16 +144,17 @@ class NeoSwarmTUI(App):
         self.current_provider = "Anthropic"
         self.messages: list[dict] = []
         self.available_models: dict = {}
+        self.sessions: list[dict] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Container(id="main"):
             with Horizontal():
                 with Vertical(id="sidebar"):
-                    yield Static("Sessions", id="sessions-header")
-                    yield Static("No active sessions", id="sessions-list")
-                    yield Static("\nTools", id="tools-header")
-                    yield Static("• bash\n• write\n• read\n• grep", id="tools-list")
+                    yield Label("Sessions")
+                    yield ListView(id="sessions-list")
+                    yield Label("Tools")
+                    yield Static("  • bash\n  • write\n  • read\n  • grep", id="tools-list")
                 with Vertical(id="chat-panel"):
                     yield Static("[bold]Chat[/bold] sonnet", id="chat-header")
                     yield TA(id="chat-history")
@@ -196,6 +167,7 @@ class NeoSwarmTUI(App):
     async def on_mount(self) -> None:
         self.connect_backend()
         await self.fetch_models()
+        await self.fetch_sessions()
 
     @work
     async def connect_backend(self):
@@ -217,6 +189,29 @@ class NeoSwarmTUI(App):
         except Exception:
             self.update_status("[yellow]Using defaults[/yellow]")
 
+    async def fetch_sessions(self):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{self.backend_url}/api/agents/sessions", timeout=5.0)
+                if resp.status_code == 200:
+                    self.sessions = resp.json().get("sessions", [])
+                    self.render_sessions()
+        except Exception:
+            pass
+
+    def render_sessions(self):
+        list_view = self.query_one("#sessions-list", ListView)
+        list_view.clear()
+        if not self.sessions:
+            list_view.append(ListItem(Static("  No sessions", id="no-sessions")))
+            return
+        for s in self.sessions:
+            sid = s.get("id", "")[:8]
+            model = s.get("model", "?")
+            is_active = sid == (self.session_id[:8] if self.session_id else None)
+            prefix = "▶ " if is_active else "  "
+            list_view.append(ListItem(Static(f"{prefix}[cyan]{sid}[/cyan] ({model})", classes="active-session" if is_active else "")))
+
     def update_status(self, status: str):
         try:
             header = self.query_one("#chat-header", Static)
@@ -229,14 +224,12 @@ class NeoSwarmTUI(App):
         if not message:
             return
         event.input.clear()
-
         if message.startswith("/model "):
             await self._handle_inline_model(message)
             return
         if message in ("/model", "/new", "/clear", "/refresh", "/sidebar", "/output"):
             self._handle_command(message)
             return
-
         await self.send_message(message)
 
     def _handle_command(self, cmd: str):
@@ -254,7 +247,6 @@ class NeoSwarmTUI(App):
         if not arg:
             await self.action_command_center()
             return
-
         try:
             idx = int(arg)
             all_models = []
@@ -269,7 +261,6 @@ class NeoSwarmTUI(App):
                 return
         except ValueError:
             pass
-
         for provider, models in self.available_models.items():
             for m in models:
                 value = m.get("value", "")
@@ -293,10 +284,17 @@ class NeoSwarmTUI(App):
     async def create_session(self):
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{self.backend_url}/api/agents/sessions", json={"model": self.current_model, "mode": "chat"})
+                resp = await client.post(
+                    f"{self.backend_url}/api/agents/launch",
+                    json={"model": self.current_model, "mode": "chat"},
+                )
                 if resp.status_code == 200:
-                    self.session_id = resp.json().get("id")
-                    self.update_sessions_list()
+                    body = resp.json()
+                    self.session_id = body.get("session_id")
+                    await self.fetch_sessions()
+                    self.update_status(f"[green]Session {self.session_id[:8] if self.session_id else ''} created[/green]")
+                else:
+                    self.update_status(f"[red]Create session failed: {resp.status_code}[/red]")
         except Exception as e:
             self.update_status(f"[red]Error: {e}[/red]")
 
@@ -305,9 +303,13 @@ class NeoSwarmTUI(App):
         output_text.update("[yellow]Thinking...[/yellow]")
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{self.backend_url}/api/agents/sessions/{self.session_id}/prompt", json={"prompt": prompt})
+                resp = await client.post(
+                    f"{self.backend_url}/api/agents/sessions/{self.session_id}/message",
+                    json={"prompt": prompt},
+                )
                 if resp.status_code == 200:
-                    response = resp.json().get("response", "")
+                    result = resp.json()
+                    response = result.get("response", result.get("content", "(no response)"))
                     self.messages.append({"role": "assistant", "content": response})
                     chat_history = self.query_one("#chat-history", TA)
                     chat_history.text = (chat_history.text or "") + f"Neo: {response}\n"
@@ -315,18 +317,46 @@ class NeoSwarmTUI(App):
         except Exception as e:
             output_text.update(f"[red]Error: {e}[/red]")
 
-    def update_sessions_list(self):
+    async def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Switch to a session from the sidebar."""
+        if event.list_view.id != "sessions-list":
+            return
+        if not self.sessions:
+            return
+        idx = event.list_view.index
+        if idx < len(self.sessions):
+            s = self.sessions[idx]
+            self.session_id = s.get("id")
+            self.current_model = s.get("model", self.current_model)
+            self.current_provider = s.get("provider", self.current_provider)
+            self.messages = s.get("messages", [])
+            chat_history = self.query_one("#chat-history", TA)
+            chat_history.text = "\n".join(
+                f"{'You' if m.get('role') == 'user' else 'Neo'}: {m.get('content', '')}"
+                for m in self.messages
+            ) or ""
+            self.update_status(f"[green]Switched to session {self.session_id[:8]}[/green]")
+            self.render_sessions()
+
+    async def action_delete_session(self, session_id: str):
         try:
-            sessions = self.query_one("#sessions-list", Static)
-            sessions.update(f"• {self.session_id[:8]}..." if self.session_id else "No active sessions")
-        except Exception:
-            pass
+            async with httpx.AsyncClient() as client:
+                resp = await client.delete(f"{self.backend_url}/api/agents/sessions/{session_id}")
+                if resp.status_code == 200:
+                    if self.session_id == session_id:
+                        self.session_id = None
+                        self.messages = []
+                        self.query_one("#chat-history", TA).clear()
+                    await self.fetch_sessions()
+                    self.update_status("[green]Session deleted[/green]")
+        except Exception as e:
+            self.update_status(f"[red]Delete failed: {e}[/red]")
 
     def action_new_session(self):
         self.session_id = None
         self.messages = []
         self.query_one("#chat-history", TA).clear()
-        self.update_sessions_list()
+        self.render_sessions()
         self.update_status("[cyan]New session[/cyan]")
 
     async def action_command_center(self):
@@ -344,7 +374,10 @@ class NeoSwarmTUI(App):
             self._handle_command(result)
 
     def action_toggle_sidebar(self):
-        self.query_one("#sidebar").display = not self.query_one("#sidebar").display
+        sidebar = self.query_one("#sidebar")
+        sidebar.display = not sidebar.display
+        if sidebar.display:
+            asyncio.create_task(self.fetch_sessions())
 
     def action_toggle_output(self):
         self.query_one("#output-panel").display = not self.query_one("#output-panel").display
@@ -352,6 +385,7 @@ class NeoSwarmTUI(App):
     def action_refresh(self):
         self.connect_backend()
         asyncio.create_task(self.fetch_models())
+        asyncio.create_task(self.fetch_sessions())
 
 
 def run_tui():
