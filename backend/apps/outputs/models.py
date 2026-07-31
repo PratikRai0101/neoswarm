@@ -11,6 +11,7 @@ class AutoRunConfig(BaseModel):
     forced_tools: list[dict[str, Any]] = Field(default_factory=list)
     mode: str = "agent"
     model: str = "sonnet"
+    provider: Optional[str] = None
 
 
 class Output(BaseModel):
@@ -146,6 +147,7 @@ class AutoRunRequest(BaseModel):
     context_paths: list[dict[str, str]] = Field(default_factory=list)
     forced_tools: list[str] = Field(default_factory=list)
     model: str = "sonnet"
+    provider: Optional[str] = None
 
 
 class AutoRunAgentRequest(BaseModel):
@@ -153,6 +155,7 @@ class AutoRunAgentRequest(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_id: str
     model: str = "sonnet"
+    provider: Optional[str] = None
     forced_tools: list[str] = Field(default_factory=list)
     context_paths: list[dict[str, str]] = Field(default_factory=list)
 

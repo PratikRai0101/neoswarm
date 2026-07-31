@@ -13,6 +13,7 @@ export interface AutoRunConfig {
   forced_tools: Array<{ label: string; tools: string[]; iconKey?: string }>;
   mode: string;
   model: string;
+  provider?: string | null;
 }
 
 export interface Output {
@@ -141,7 +142,7 @@ export interface AutoRunResult {
 
 export const autoRunOutput = createAsyncThunk(
   'outputs/autoRun',
-  async (body: { prompt: string; input_schema: Record<string, any>; backend_code?: string | null; context_paths?: Array<{ path: string; type: string }>; forced_tools?: string[]; model?: string }) => {
+  async (body: { prompt: string; input_schema: Record<string, any>; backend_code?: string | null; context_paths?: Array<{ path: string; type: string }>; forced_tools?: string[]; model?: string; provider?: string | null }) => {
     const res = await fetch(`${OUTPUTS_API}/auto-run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -162,6 +163,7 @@ export const autoRunAgentOutput = createAsyncThunk(
     input_schema: Record<string, any>;
     output_id: string;
     model?: string;
+    provider?: string | null;
     forced_tools?: string[];
     context_paths?: Array<{ path: string; type: string }>;
   }) => {

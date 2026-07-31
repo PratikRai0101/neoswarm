@@ -41,6 +41,7 @@ import CodeEditor from './CodeEditor';
 import { ElementSelectionProvider } from '@/app/components/ElementSelectionContext';
 import { captureViewThumbnail } from './captureViewThumbnail';
 import { API_BASE } from '@/shared/config';
+import { flattenModelCatalog, selectExecutableModel } from '@/shared/models';
 
 const WORKSPACE_API = `${API_BASE}/outputs/workspace`;
 const POLL_INTERVAL_MS = 2000;
@@ -472,6 +473,10 @@ interface Props {
 const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const modelsByProvider = useAppSelector((state) => state.models.byProvider);
+  const modelsLoaded = useAppSelector((state) => state.models.loaded);
+  const defaultModel = useAppSelector((state) => state.settings.data.default_model);
+  const modelCatalog = useMemo(() => flattenModelCatalog(modelsByProvider), [modelsByProvider]);
 
   const [createdId, setCreatedId] = useState<string | null>(null);
   const createdIdRef = useRef<string | null>(null);
@@ -513,7 +518,8 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const savedAutoRun = output?.auto_run_config;
   const [autoRunEnabled, setAutoRunEnabled] = useState(savedAutoRun?.enabled ?? false);
   const [autoRunMode, setAutoRunMode] = useState(savedAutoRun?.mode ?? 'agent');
-  const [autoRunModel, setAutoRunModel] = useState(savedAutoRun?.model ?? 'sonnet');
+  const [autoRunModel, setAutoRunModel] = useState(savedAutoRun?.model ?? '');
+  const [autoRunProvider, setAutoRunProvider] = useState(savedAutoRun?.provider ?? '');
   const [autoRunning, setAutoRunning] = useState(false);
   const autoRunInputRef = useRef<ChatInputHandle>(null);
   const autoRunInitialized = useRef(false);
@@ -528,6 +534,20 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   );
   const autoRunMessages = autoRunSession?.messages ?? [];
   const autoRunSessionStatus = autoRunSession?.status ?? null;
+
+  useEffect(() => {
+    if (!modelsLoaded || modelCatalog.length === 0) return;
+    const current =
+      modelCatalog.find(
+        (choice) =>
+          choice.value === autoRunModel &&
+          (!autoRunProvider || choice.provider === autoRunProvider),
+      ) ?? modelCatalog.find((choice) => choice.value === autoRunModel);
+    const selected = current ?? selectExecutableModel(modelCatalog, defaultModel);
+    if (!selected) return;
+    if (selected.value !== autoRunModel) setAutoRunModel(selected.value);
+    if (selected.provider !== autoRunProvider) setAutoRunProvider(selected.provider);
+  }, [modelsLoaded, modelCatalog, defaultModel, autoRunModel, autoRunProvider]);
 
   const SIDEBAR_MIN = 280;
   const SIDEBAR_MAX = 800;
@@ -717,6 +737,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
       forced_tools: (config?.forcedTools ?? []).map(({ label, tools, iconKey }) => ({ label, tools, iconKey })),
       mode: autoRunMode,
       model: autoRunModel,
+      provider: autoRunProvider || null,
     };
   };
 
@@ -826,6 +847,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
           input_schema: schema,
           output_id: eid,
           model: autoRunModel,
+          provider: autoRunProvider || null,
           forced_tools: forcedToolNames,
           context_paths: config.contextPaths.map((cp) => ({ path: cp.path, type: cp.type })),
         })).unwrap();
@@ -846,6 +868,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
           context_paths: config.contextPaths.map((cp) => ({ path: cp.path, type: cp.type })),
           forced_tools: forcedToolNames.length > 0 ? forcedToolNames : undefined,
           model: autoRunModel,
+          provider: autoRunProvider || null,
         })).unwrap();
         if (res.input_data) {
           setTestInput(res.input_data);
@@ -1029,7 +1052,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [files, name, description, autoRunEnabled, autoRunMode, autoRunModel]);
+  }, [files, name, description, autoRunEnabled, autoRunMode, autoRunModel, autoRunProvider]);
 
   useEffect(() => {
     return () => {
@@ -1142,7 +1165,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
               variant="outlined"
               startIcon={autoRunning ? <CircularProgress size={14} /> : <BoltIcon sx={{ fontSize: 16 }} />}
               onClick={handleAutoRun}
-              disabled={autoRunning}
+              disabled={autoRunning || !autoRunModel || !autoRunProvider || modelCatalog.length === 0}
               size="small"
               sx={{
                 borderColor: '#f59e0b40',
@@ -1507,7 +1530,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
                     size="small"
                     startIcon={autoRunning ? <CircularProgress size={12} /> : <BoltIcon sx={{ fontSize: 14 }} />}
                     onClick={handleAutoRun}
-                    disabled={autoRunning}
+                    disabled={autoRunning || !autoRunModel || !autoRunProvider || modelCatalog.length === 0}
                     sx={{
                       textTransform: 'none',
                       fontSize: '0.78rem',
@@ -1534,6 +1557,9 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
                       onModeChange={setAutoRunMode}
                       model={autoRunModel}
                       onModelChange={setAutoRunModel}
+                      provider={autoRunProvider}
+                      onProviderChange={setAutoRunProvider}
+                      disabled={!modelsLoaded || modelCatalog.length === 0}
                     />
                     <Button
                       variant="contained"

@@ -414,6 +414,7 @@ async def auto_run_output(body: AutoRunRequest):
             max_tokens=4000,
             preferred_tier="fast",
             model=body.model or None,
+            provider=body.provider,
         )
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
@@ -530,6 +531,7 @@ async def auto_run_agent(body: AutoRunAgentRequest):
     config = AgentConfig(
         name=f"AutoRun: {output.name}",
         model=body.model,
+        provider=body.provider,
         mode="agent",
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
