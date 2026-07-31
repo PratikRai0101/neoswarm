@@ -477,6 +477,10 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const modelsLoaded = useAppSelector((state) => state.models.loaded);
   const defaultModel = useAppSelector((state) => state.settings.data.default_model);
   const modelCatalog = useMemo(() => flattenModelCatalog(modelsByProvider), [modelsByProvider]);
+  const builderModel = useMemo(
+    () => selectExecutableModel(modelCatalog, defaultModel),
+    [modelCatalog, defaultModel],
+  );
 
   const [createdId, setCreatedId] = useState<string | null>(null);
   const createdIdRef = useRef<string | null>(null);
@@ -583,7 +587,7 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
   const draftCreated = useRef(false);
 
   useEffect(() => {
-    if (draftCreated.current) return;
+    if (!modelsLoaded || !builderModel || draftCreated.current) return;
     draftCreated.current = true;
 
     (async () => {
@@ -606,16 +610,23 @@ const ViewEditor: React.FC<Props> = ({ output, onClose }) => {
         setWorkspacePath(data.path);
         const action = dispatch(createDraftSession({
           mode: 'view-builder',
+          model: builderModel.value,
+          provider: builderModel.provider,
           setActive: false,
           targetDirectory: data.path,
         }));
         setInitialDraftId(action.payload.draftId);
       } catch {
-        const action = dispatch(createDraftSession({ mode: 'view-builder', setActive: false }));
+        const action = dispatch(createDraftSession({
+          mode: 'view-builder',
+          model: builderModel.value,
+          provider: builderModel.provider,
+          setActive: false,
+        }));
         setInitialDraftId(action.payload.draftId);
       }
     })();
-  }, [dispatch, output, stableWorkspaceId]);
+  }, [dispatch, output, stableWorkspaceId, modelsLoaded, builderModel]);
 
   const effectiveSessionId = useAppSelector((state) => {
     if (!initialDraftId) return null;

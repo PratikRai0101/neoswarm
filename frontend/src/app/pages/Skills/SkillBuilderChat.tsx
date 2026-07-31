@@ -17,6 +17,7 @@ import { createSkill } from '@/shared/state/skillsSlice';
 import AgentChat from '../AgentChat/AgentChat';
 import { ContextPath } from '@/app/components/DirectoryBrowser';
 import { API_BASE } from '@/shared/config';
+import { flattenModelCatalog, selectExecutableModel } from '@/shared/models';
 
 const SKILLS_WORKSPACE_API = `${API_BASE}/skills`;
 const POLL_INTERVAL_MS = 2000;
@@ -43,6 +44,14 @@ const MAX_H = 900;
 const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onSkillSaved, expanded, onExpandedChange }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const modelsByProvider = useAppSelector((state) => state.models.byProvider);
+  const modelsLoaded = useAppSelector((state) => state.models.loaded);
+  const defaultModel = useAppSelector((state) => state.settings.data.default_model);
+  const modelCatalog = useMemo(() => flattenModelCatalog(modelsByProvider), [modelsByProvider]);
+  const builderModel = useMemo(
+    () => selectExecutableModel(modelCatalog, defaultModel),
+    [modelCatalog, defaultModel],
+  );
 
   const setExpanded = onExpandedChange;
   const [panelWidth, setPanelWidth] = useState(420);
@@ -104,6 +113,7 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
   );
 
   const initSession = useCallback(async () => {
+    if (!builderModel) return;
     const wsId = `skill-ws-${Date.now().toString(36)}`;
     setStableWorkspaceId(wsId);
 
@@ -117,21 +127,28 @@ const SkillBuilderChat: React.FC<SkillBuilderChatProps> = ({ onSkillPreview, onS
       setWorkspacePath(data.path);
       const action = dispatch(createDraftSession({
         mode: 'skill-builder',
+        model: builderModel.value,
+        provider: builderModel.provider,
         setActive: false,
         targetDirectory: data.path,
       }));
       setInitialDraftId(action.payload.draftId);
     } catch {
-      const action = dispatch(createDraftSession({ mode: 'skill-builder', setActive: false }));
+      const action = dispatch(createDraftSession({
+        mode: 'skill-builder',
+        model: builderModel.value,
+        provider: builderModel.provider,
+        setActive: false,
+      }));
       setInitialDraftId(action.payload.draftId);
     }
-  }, [dispatch]);
+  }, [dispatch, builderModel]);
 
   useEffect(() => {
-    if (draftCreated.current) return;
+    if (!modelsLoaded || !builderModel || draftCreated.current) return;
     draftCreated.current = true;
     initSession();
-  }, [initSession]);
+  }, [initSession, modelsLoaded, builderModel]);
 
   // Poll workspace for updates
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);

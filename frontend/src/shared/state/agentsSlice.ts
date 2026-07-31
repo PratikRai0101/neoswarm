@@ -437,14 +437,14 @@ const agentsSlice = createSlice({
   initialState,
   reducers: {
     createDraftSession: {
-      reducer(state, action: PayloadAction<{ draftId: string; mode: string; setActive: boolean; targetDirectory?: string }>) {
-        const { draftId, mode, setActive, targetDirectory } = action.payload;
+      reducer(state, action: PayloadAction<{ draftId: string; mode: string; model: string; provider: string; setActive: boolean; targetDirectory?: string }>) {
+        const { draftId, mode, model, provider, setActive, targetDirectory } = action.payload;
         state.sessions[draftId] = {
           id: draftId,
           name: 'New chat',
           status: 'draft',
-          provider: 'anthropic',
-          model: 'sonnet',
+          provider,
+          model,
           mode,
           worktree_path: null,
           branch_name: null,
@@ -470,11 +470,13 @@ const agentsSlice = createSlice({
           }
         }
       },
-      prepare(opts?: { mode?: string; setActive?: boolean; targetDirectory?: string }) {
+      prepare(opts?: { mode?: string; model?: string; provider?: string; setActive?: boolean; targetDirectory?: string }) {
         return {
           payload: {
             draftId: `draft-${Date.now().toString(36)}`,
             mode: opts?.mode || 'agent',
+            model: opts?.model || 'sonnet',
+            provider: opts?.provider || 'anthropic',
             setActive: opts?.setActive !== false,
             targetDirectory: opts?.targetDirectory,
           },
