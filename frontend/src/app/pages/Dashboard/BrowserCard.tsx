@@ -1018,7 +1018,7 @@ const BrowserCard: React.FC<Props> = ({
               }}
               data-tab-id={tab.id}
               src="about:blank"
-              allowpopups="true"
+              allowpopups
               useragent={chromeUserAgent}
               {...(webviewPreloadPath ? { preload: webviewPreloadPath } : {})}
               webpreferences="plugins=yes, autoplayPolicy=no-user-gesture-required"

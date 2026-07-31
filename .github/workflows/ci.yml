@@ -86,6 +86,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Audit production and build dependencies
         run: npm audit --audit-level=high
+      - name: Type-check
+        run: npm run typecheck
       - name: Build
         run: npm run build
 

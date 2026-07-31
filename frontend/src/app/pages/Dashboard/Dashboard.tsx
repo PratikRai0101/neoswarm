@@ -1236,7 +1236,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         }
       });
     },
-    [canvas.viewportRef, canvas.actions, dispatch, dashboardId, expandNewChats, handleHighlightCard, provider],
+    [canvas.viewportRef, canvas.actions, dispatch, dashboardId, expandNewChats, handleHighlightCard],
   );
 
   const handleAddView = useCallback((outputId: string) => {

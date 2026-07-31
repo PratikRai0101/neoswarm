@@ -6,6 +6,7 @@
     "build": "webpack --mode=production",
     "build:watch": "webpack --mode=development --watch",
     "dev": "webpack serve --mode=development",
+    "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
