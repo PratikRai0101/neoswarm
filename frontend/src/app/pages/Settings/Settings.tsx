@@ -47,6 +47,7 @@ import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import DirectoryBrowser from '@/app/components/DirectoryBrowser';
 import { CommandsContent } from '@/app/pages/Commands/Commands';
 import { API_BASE } from '@/shared/config';
+import { flattenModelCatalog } from '@/shared/models';
 
 // ── Pixel Bar ──
 const PIXEL_SALMON = ['#C46B57', '#D4795F', '#E8927A', '#F0A088', '#F5B49E'];
@@ -337,9 +338,11 @@ const Settings: React.FC = () => {
   const settings = useAppSelector((s) => s.settings.data);
   const loaded = useAppSelector((s) => s.settings.loaded);
   const modes = useAppSelector((s) => s.modes.items);
+  const modelsByProvider = useAppSelector((s) => s.models.byProvider);
   const { setMode: setThemeMode } = useThemeMode();
 
   const modesList = useMemo(() => Object.values(modes), [modes]);
+  const modelCatalog = useMemo(() => flattenModelCatalog(modelsByProvider), [modelsByProvider]);
 
   const updateStatus = useAppSelector((s) => s.update.status);
   const appVersion = useAppSelector((s) => s.update.appVersion);
@@ -671,9 +674,21 @@ const Settings: React.FC = () => {
               sx={{ fontSize: '0.85rem' }}
               MenuProps={{ PaperProps: { sx: { bgcolor: c.bg.surface, color: c.text.primary } } }}
             >
-              <MenuItem value="sonnet">Sonnet 4.6</MenuItem>
-              <MenuItem value="opus">Opus 4.6</MenuItem>
-              <MenuItem value="haiku">Haiku 3.5</MenuItem>
+              {!modelCatalog.some((choice) => choice.value === form.default_model) && (
+                <MenuItem value={form.default_model} disabled>
+                  {form.default_model} (unavailable)
+                </MenuItem>
+              )}
+              {Object.entries(modelsByProvider).flatMap(([providerName, providerModels]) => [
+                <MenuItem key={`${providerName}-heading`} disabled sx={{ opacity: '1 !important', fontSize: '0.7rem', fontWeight: 700 }}>
+                  {providerName}
+                </MenuItem>,
+                ...providerModels.map((providerModel) => (
+                  <MenuItem key={`${providerName}-${providerModel.value}`} value={providerModel.value}>
+                    {providerModel.label}
+                  </MenuItem>
+                )),
+              ])}
             </Select>
           </FormControl>
         </Box>

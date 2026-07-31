@@ -317,6 +317,24 @@ def create_provider(
     provider_config: dict | None = None,
 ) -> BaseProvider:
     """Create a provider adapter for NeoSwarm."""
+    from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
+
+    if provider_config:
+        return OpenAICompatProvider(
+            api_key=provider_config.get("api_key", ""),
+            base_url=provider_config.get("base_url", ""),
+        )
+
+    # Resolve custom providers before the built-in API fallback. Unknown names
+    # historically defaulted to OpenRouter, which made custom providers
+    # unreachable unless an unrelated OpenRouter key was also configured.
+    for custom_provider in getattr(settings, "custom_providers", []):
+        if custom_provider.name.lower() == provider_name.lower():
+            return OpenAICompatProvider(
+                api_key=custom_provider.api_key,
+                base_url=custom_provider.base_url,
+            )
+
     api_type = _get_api_type(provider_name)
 
     if api_type == "anthropic":
@@ -327,8 +345,6 @@ def create_provider(
         return AnthropicProvider(api_key=settings.anthropic_api_key)
 
     if api_type in {"openai", "codex"}:
-        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-
         if not settings.openai_api_key:
             raise ValueError("OpenAI API key not configured. Set it in Settings.")
         return OpenAICompatProvider(
@@ -336,8 +352,6 @@ def create_provider(
         )
 
     if api_type in {"gemini", "gemini-cli"}:
-        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-
         if not settings.google_api_key:
             raise ValueError("Google API key not configured. Set it in Settings.")
         return OpenAICompatProvider(
@@ -346,8 +360,6 @@ def create_provider(
         )
 
     if api_type == "openrouter":
-        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-
         openrouter_key = getattr(settings, "openrouter_api_key", None)
         if not openrouter_key:
             raise ValueError("OpenRouter API key not configured. Set it in Settings.")
@@ -359,20 +371,6 @@ def create_provider(
         from backend.apps.agents.providers.ollama import OllamaProvider
 
         return OllamaProvider()
-
-    if provider_config:
-        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-
-        return OpenAICompatProvider(
-            api_key=provider_config.get("api_key", ""),
-            base_url=provider_config.get("base_url", ""),
-        )
-
-    for cp in getattr(settings, "custom_providers", []):
-        if cp.name == provider_name:
-            from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
-
-            return OpenAICompatProvider(api_key=cp.api_key, base_url=cp.base_url)
 
     raise ValueError(f"Unknown provider: {provider_name}")
 

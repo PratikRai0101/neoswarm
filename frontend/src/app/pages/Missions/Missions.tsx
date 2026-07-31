@@ -36,6 +36,7 @@ import {
   startMission,
 } from '@/shared/state/missionsSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { flattenModelCatalog } from '@/shared/models';
 
 interface ModelChoice {
   key: string;
@@ -77,14 +78,12 @@ const Missions: React.FC = () => {
 
   const modelChoices = useMemo<ModelChoice[]>(
     () =>
-      Object.entries(modelsByProvider).flatMap(([provider, models]) =>
-        models.map((model) => ({
-          key: `${provider}::${model.value}`,
-          provider: provider.toLowerCase(),
-          model: model.value,
-          label: `${provider} · ${model.label}`,
-        })),
-      ),
+      flattenModelCatalog(modelsByProvider).map((choice) => ({
+        key: `${choice.group}::${choice.value}`,
+        provider: choice.provider,
+        model: choice.value,
+        label: `${choice.group} · ${choice.label}`,
+      })),
     [modelsByProvider],
   );
 
@@ -93,7 +92,11 @@ const Missions: React.FC = () => {
   }, [dispatch]);
 
   useEffect(() => {
-    if (modelKey || modelChoices.length === 0) return;
+    if (modelChoices.length === 0) {
+      if (modelKey) setModelKey('');
+      return;
+    }
+    if (modelChoices.some((choice) => choice.key === modelKey)) return;
     const preferred = modelChoices.find((choice) => choice.model === defaultModel);
     setModelKey((preferred || modelChoices[0]).key);
   }, [modelChoices, modelKey, defaultModel]);

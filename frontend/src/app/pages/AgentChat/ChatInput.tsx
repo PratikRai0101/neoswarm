@@ -45,6 +45,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { providerIdForGroup } from '@/shared/models';
 
 export interface AttachedImage {
   data: string;
@@ -228,7 +229,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
 
   // Build flat model list with provider grouping
   const allModelOptions = useMemo(() => {
-    if (!modelsLoaded || Object.keys(modelsByProvider).length === 0) {
+    if (!modelsLoaded) {
       return { flat: FALLBACK_MODELS.map(m => ({ ...m, provider: 'Anthropic' })), grouped: { Anthropic: FALLBACK_MODELS } };
     }
     const flat: Array<{ value: string; label: string; context_window: number; provider: string; reasoning: boolean }> = [];
@@ -1061,7 +1062,9 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
         </Menu>
 
         <Box
-          onClick={(e) => setModelAnchor(e.currentTarget)}
+          onClick={(e) => {
+            if (allModelOptions.flat.length > 0) setModelAnchor(e.currentTarget);
+          }}
           sx={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -1069,7 +1072,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
             px: 0.75,
             py: 0.25,
             borderRadius: '6px',
-            cursor: 'pointer',
+            cursor: allModelOptions.flat.length > 0 ? 'pointer' : 'default',
             userSelect: 'none',
             color: c.text.muted,
             '&:hover': { bgcolor: 'rgba(0,0,0,0.04)' },
@@ -1077,7 +1080,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
           }}
         >
           <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: 'inherit', lineHeight: 1 }}>
-            {(() => { const m = allModelOptions.flat.find((m) => m.value === model); return m ? m.label : model; })()}
+            {(() => { const m = allModelOptions.flat.find((m) => m.value === model); return m ? m.label : model || 'No model available'; })()}
           </Typography>
           <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
         </Box>
@@ -1130,19 +1133,7 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                   onClick={() => {
                     onModelChange(opt.value);
                     if (onProviderChange) {
-                      const provLower = prov.toLowerCase();
-                      const providerMap: Record<string, string> = {
-                        anthropic: 'anthropic',
-                        openai: 'openai',
-                        google: 'gemini',
-                        xai: 'openrouter',
-                        meta: 'openrouter',
-                        deepseek: 'openrouter',
-                        mistral: 'openrouter',
-                        qwen: 'openrouter',
-                        cohere: 'openrouter',
-                      };
-                      onProviderChange(providerMap[provLower] || provLower);
+                      onProviderChange(providerIdForGroup(prov));
                     }
                     if (prov.toLowerCase() !== 'anthropic' && enabledMcpToolCount > MCP_WARNING_THRESHOLD) {
                       try {

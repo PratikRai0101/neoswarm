@@ -21,6 +21,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { searchHistory, clearHistorySearch } from '@/shared/state/agentsSlice';
 import type { ClaudeTokens } from '@/shared/styles/claudeTokens';
 import type { Output } from '@/shared/state/outputsSlice';
+import { flattenModelCatalog, selectExecutableModel } from '@/shared/models';
 
 interface Props {
   inputOpen: boolean;
@@ -94,18 +95,44 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const historyListRef = useRef<HTMLDivElement>(null);
     const defaultMode = useAppSelector((s) => s.settings.data.default_mode);
     const defaultModel = useAppSelector((s) => s.settings.data.default_model);
-    const [mode, setMode] = useState(defaultMode || 'agent');
-    const [model, setModel] = useState(defaultModel || 'sonnet');
-    const [provider, setProvider] = useState('anthropic');
+    const settingsLoaded = useAppSelector((s) => s.settings.loaded);
+    const modelsByProvider = useAppSelector((s) => s.models.byProvider);
+    const modelsLoaded = useAppSelector((s) => s.models.loaded);
+    const modelCatalog = useMemo(() => flattenModelCatalog(modelsByProvider), [modelsByProvider]);
+    const [mode, setMode] = useState('agent');
+    const [model, setModel] = useState('');
+    const [provider, setProvider] = useState('');
     const [thinkingLevel, setThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high' | 'auto'>('auto');
-    const settingsApplied = useRef(false);
+    const modeDefaultApplied = useRef(false);
+    const modelDefaultApplied = useRef(false);
+
     useEffect(() => {
-      if (!settingsApplied.current) {
-        setMode(defaultMode || 'agent');
-        setModel(defaultModel || 'sonnet');
-        settingsApplied.current = true;
+      if (!settingsLoaded || modeDefaultApplied.current) return;
+      setMode(defaultMode || 'agent');
+      modeDefaultApplied.current = true;
+    }, [settingsLoaded, defaultMode]);
+
+    useEffect(() => {
+      if (!settingsLoaded || !modelsLoaded) return;
+      if (modelCatalog.length === 0) {
+        setModel('');
+        setProvider('');
+        return;
       }
-    }, [defaultMode, defaultModel]);
+
+      if (!modelDefaultApplied.current) {
+        const selected = selectExecutableModel(modelCatalog, defaultModel);
+        setModel(selected?.value ?? '');
+        setProvider(selected?.provider ?? '');
+        modelDefaultApplied.current = true;
+        return;
+      }
+
+      const current = modelCatalog.find((choice) => choice.value === model);
+      const selected = current ?? modelCatalog[0];
+      if (selected.value !== model) setModel(selected.value);
+      if (selected.provider !== provider) setProvider(selected.provider);
+    }, [settingsLoaded, modelsLoaded, modelCatalog, defaultModel, model, provider]);
     const [viewPickerOpen, setViewPickerOpen] = useState(false);
     const [viewSearch, setViewSearch] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -364,6 +391,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
           <div style={{ width: '100%', minHeight: 44, paddingBottom: 0, marginBottom: -4 }}>
             <ChatInput
               onSend={handleSend}
+              disabled={!modelsLoaded || modelCatalog.length === 0}
               mode={mode}
               onModeChange={setMode}
               model={model}

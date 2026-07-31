@@ -333,6 +333,10 @@ async def list_models():
                 has_key = bool(getattr(settings, "google_api_key", None))
                 if not has_key:
                     continue
+            elif api == "openrouter":
+                has_key = bool(getattr(settings, "openrouter_api_key", None))
+                if not has_key:
+                    continue
             visible.append(
                 {
                     "provider": provider_name,
@@ -368,6 +372,67 @@ async def list_models():
                     result["Ollama"] = ollama_models
     except Exception:
         pass  # Ollama not running
+
+    # OpenRouter publishes its model catalog dynamically. Fetch it only after a
+    # key is configured so local-only installations never contact the service.
+    openrouter_key = getattr(settings, "openrouter_api_key", None)
+    if openrouter_key:
+        try:
+            import httpx
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {openrouter_key}"},
+                    timeout=8.0,
+                )
+            if resp.status_code == 200:
+                openrouter_models = []
+                for model in resp.json().get("data", []):
+                    model_id = model.get("id", "")
+                    output_modalities = model.get("architecture", {}).get(
+                        "output_modalities", []
+                    )
+                    if not model_id or (
+                        output_modalities and "text" not in output_modalities
+                    ):
+                        continue
+                    supported = model.get("supported_parameters", [])
+                    openrouter_models.append(
+                        {
+                            "provider": "OpenRouter",
+                            "value": model_id,
+                            "label": model.get("name") or model_id,
+                            "context_window": model.get("context_length") or 128_000,
+                            "reasoning": bool(model.get("reasoning"))
+                            or "reasoning" in supported
+                            or "reasoning_effort" in supported,
+                        }
+                    )
+                if openrouter_models:
+                    result["OpenRouter"] = openrouter_models
+        except Exception:
+            pass  # Keep other configured providers available if OpenRouter is down.
+
+    # User-configured OpenAI-compatible providers retain their exact names so
+    # provider creation can resolve the corresponding local settings entry.
+    for custom_provider in getattr(settings, "custom_providers", []):
+        custom_models = []
+        for model in custom_provider.models:
+            model_value = model.get("value", model.get("id", ""))
+            if not model_value:
+                continue
+            custom_models.append(
+                {
+                    "provider": custom_provider.name,
+                    "value": model_value,
+                    "label": model.get("label", model_value),
+                    "context_window": model.get("context_window", 128_000),
+                    "reasoning": bool(model.get("reasoning", False)),
+                }
+            )
+        if custom_models:
+            result[custom_provider.name] = custom_models
 
     # GitHub Copilot authentication is retained for future use, but Copilot and
     # GitHub catalog models are intentionally omitted until an execution
