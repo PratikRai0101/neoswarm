@@ -86,3 +86,7 @@ def test_state_tracks_connection_approval_and_session_status():
     assert state.pending_approvals == {
         "session-1": [{"id": "approval-1", "tool_name": "Bash"}]
     }
+
+    state.resolve_approval("session-1", "approval-1")
+
+    assert state.pending_approvals == {}

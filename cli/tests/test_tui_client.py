@@ -39,7 +39,11 @@ async def test_client_uses_the_backend_session_contract():
             return httpx.Response(200, json={"sessions": []})
         if request.url.path == "/api/agents/launch":
             return httpx.Response(200, json={"session": {"id": "session-1"}})
+        if request.url.path == "/api/agents/sessions/session-1" and request.method == "GET":
+            return httpx.Response(200, json={"id": "session-1", "messages": []})
         if request.url.path.endswith("/message"):
+            return httpx.Response(200, json={"ok": True})
+        if request.url.path == "/api/agents/approval":
             return httpx.Response(200, json={"ok": True})
         if request.method == "DELETE":
             return httpx.Response(200, json={"ok": True})
@@ -54,11 +58,18 @@ async def test_client_uses_the_backend_session_contract():
     assert await client.models() == {"Ollama": []}
     assert await client.sessions() == []
     assert await client.launch({"model": "llama3.3"}) == {"id": "session-1"}
+    assert await client.session("session-1") == {"id": "session-1", "messages": []}
     await client.send("session-1", {"prompt": "hello"})
+    await client.respond_to_approval("approval-1", "allow")
     await client.delete("session-1")
 
-    assert requests[-2:] == [
+    assert requests[-3:] == [
         ("POST", "/api/agents/sessions/session-1/message", {"prompt": "hello"}),
+        (
+            "POST",
+            "/api/agents/approval",
+            {"request_id": "approval-1", "behavior": "allow", "message": None},
+        ),
         ("DELETE", "/api/agents/sessions/session-1", None),
     ]
 

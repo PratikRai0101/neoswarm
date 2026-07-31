@@ -65,6 +65,14 @@ class TuiState:
         if self.active_session_id == session_id:
             self.active_session_id = next(iter(self.sessions), None)
 
+    def resolve_approval(self, session_id: str, request_id: str) -> None:
+        requests = self.pending_approvals.get(session_id, [])
+        remaining = [item for item in requests if item.get("id") != request_id]
+        if remaining:
+            self.pending_approvals[session_id] = remaining
+        else:
+            self.pending_approvals.pop(session_id, None)
+
     def active_session(self) -> dict[str, Any] | None:
         if self.active_session_id is None:
             return None

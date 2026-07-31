@@ -1,150 +1,176 @@
 #!/usr/bin/env python3
-"""NeoSwarm TUI — OpenCode-style terminal UI with live session management."""
+"""NeoSwarm's streaming Textual terminal interface."""
+
+from __future__ import annotations
 
 import asyncio
+import json
 import os
-from typing import Optional
+from typing import Any
 
-import httpx
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, Input, ListView, ListItem, Label
-from textual.widgets import TextArea as TA
-from textual.screen import ModalScreen
-from textual import work
 from textual.binding import Binding
+from textual.containers import Container, Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
+from textual.widgets import TextArea as TA
+
+from cli.tui_client import BackendClient, BackendEvent, BackendRequestError
+from cli.tui_state import TuiState
+
 
 BACKEND_URL = os.environ.get("NEOSWARM_URL", "http://localhost:8324")
 
 
 class CommandCenter(ModalScreen):
-    """Unified Raycast-style command center — type to search models & commands."""
+    """Search models and terminal actions in one compact overlay."""
 
     CSS = """
     CommandCenter { align: center middle; background: rgba(0,0,0,0.7); }
-    #cc-box { width: 60; height: 24; border: solid $accent; background: $surface; }
+    #cc-box { width: 68; height: 25; border: solid $accent; background: $surface; }
     #cc-title { background: $primary; color: $text; text-align: center; padding: 1 0; text-style: bold; }
     #cc-input { dock: top; margin: 1; }
-    #cc-results { height: 16; margin: 0 1; }
+    #cc-results { height: 17; margin: 0 1; }
     #cc-footer { text-align: center; color: $text-disabled; padding: 0 1; }
     ListItem { padding: 0 1; }
     ListItem:hover { background: $boost; }
     """
 
     COMMANDS = [
-        ("/new", "Start new chat", "blue"),
-        ("/clear", "Clear chat history", "blue"),
-        ("/refresh", "Refresh backend", "blue"),
-        ("/sidebar", "Toggle sidebar", "blue"),
-        ("/output", "Toggle output panel", "blue"),
+        ("/new", "Start a new chat"),
+        ("/refresh", "Refresh sessions and models"),
+        ("/sidebar", "Toggle the session rail"),
+        ("/output", "Toggle the activity panel"),
+        ("/delete", "Delete the active session"),
     ]
 
-    def __init__(self, available_models: dict, current_model: str, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, available_models: dict[str, list[dict]], current_model: str):
+        super().__init__()
         self.current_model = current_model
-        self.all_entries: list[dict] = []
+        self.entries: list[dict[str, Any]] = []
+        self.rendered_entries: list[dict[str, Any] | None] = []
         for provider, models in available_models.items():
-            color = {"Ollama": "green", "GitHub Models": "yellow", "Copilot": "cyan"}.get(provider, "white")
-            for m in models:
-                self.all_entries.append({
-                    "type": "model",
-                    "label": m.get("label", m.get("value", "")),
-                    "value": m.get("value", ""),
-                    "provider": provider,
-                    "color": color,
-                    "data": {"provider": provider, **m},
-                })
-        for cmd, desc, color in self.COMMANDS:
-            self.all_entries.append({
-                "type": "cmd",
-                "label": f"{cmd}  —  {desc}",
-                "value": cmd,
+            for model in models:
+                self.entries.append(
+                    {
+                        "type": "model",
+                        "provider": provider,
+                        "label": model.get("label", model.get("value", "")),
+                        "value": model.get("value", ""),
+                        "data": {"provider": provider, **model},
+                    }
+                )
+        self.entries.extend(
+            {
+                "type": "command",
                 "provider": "",
-                "color": color,
-                "data": cmd,
-            })
-        self.filtered: list = list(self.all_entries)
+                "label": f"{command} — {description}",
+                "value": command,
+                "data": command,
+            }
+            for command, description in self.COMMANDS
+        )
 
     def compose(self) -> ComposeResult:
         yield Container(
-            Static("🔍  Command Center  (type to search)", id="cc-title"),
-            Input(placeholder="Search models or commands...", id="cc-input"),
+            Static("⌘  Command Center", id="cc-title"),
+            Input(placeholder="Search models or actions...", id="cc-input"),
             ListView(id="cc-results"),
             Static("↑↓ navigate · enter select · esc cancel", id="cc-footer"),
             id="cc-box",
         )
 
     async def on_mount(self) -> None:
-        await self._refresh()
+        await self._render_entries()
         self.query_one("#cc-input", Input).focus()
 
-    async def _refresh(self, query: str = "") -> None:
-        q = query.lower().strip()
-        self.filtered = [e for e in self.all_entries if not q or q in e["label"].lower() or q in e["value"].lower()]
+    async def _render_entries(self, query: str = "") -> None:
+        needle = query.lower().strip()
+        matches = [
+            entry
+            for entry in self.entries
+            if not needle
+            or needle in entry["label"].lower()
+            or needle in entry["value"].lower()
+        ]
         list_view = self.query_one("#cc-results", ListView)
         list_view.clear()
-        last_provider = None
-        for e in self.filtered:
-            if e["type"] == "model":
-                if e["provider"] != last_provider:
-                    list_view.append(ListItem(Static(f"\n[bold {e['color']}]{e['provider']}[/bold {e['color']}]")))
-                    last_provider = e["provider"]
-                marker = "▶ " if e["value"] == self.current_model else "  "
-                list_view.append(ListItem(Static(f"  {marker}[{e['color']}]◆[/{e['color']}] {e['label']}")))
-            else:
-                if last_provider is not None:
-                    last_provider = None
-                    list_view.append(ListItem(Static("")))
-                list_view.append(ListItem(Static(f"  [{e['color']}]/[/{e['color']}] {e['label']}")))
+        self.rendered_entries = []
+        last_provider: str | None = None
+
+        for entry in matches:
+            if entry["type"] == "model" and entry["provider"] != last_provider:
+                last_provider = entry["provider"]
+                list_view.append(ListItem(Static(f"[bold cyan]{last_provider}[/bold cyan]")))
+                self.rendered_entries.append(None)
+            if entry["type"] == "command" and last_provider is not None:
+                last_provider = None
+                list_view.append(ListItem(Static("")))
+                self.rendered_entries.append(None)
+
+            marker = "▶ " if entry["value"] == self.current_model else "  "
+            icon = "◆" if entry["type"] == "model" else "/"
+            list_view.append(ListItem(Static(f"{marker}{icon} {entry['label']}")))
+            self.rendered_entries.append(entry)
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        asyncio.create_task(self._refresh(event.value))
+        asyncio.create_task(self._render_entries(event.value))
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
-        if not self.filtered:
+        index = event.list_view.index
+        if index is None or index < 0 or index >= len(self.rendered_entries):
             return
-        self.dismiss(self.filtered[event.list_view.index]["data"])
+        entry = self.rendered_entries[index]
+        if entry is not None:
+            self.dismiss(entry["data"])
 
     def on_key(self, event) -> None:
         if event.key == "escape":
             self.dismiss(None)
 
 
-class NeoSwarmTUI(App):
-    """NeoSwarm Terminal UI — OpenCode-style with live session management."""
+class NeoSwarmTUI(App[None]):
+    """A local-first chat workspace backed by the NeoSwarm streaming API."""
 
     CSS = """
     Screen { background: $surface; }
-    #main { height: 100%; }
-    #sidebar { width: 28; border: solid cyan; background: $panel; }
+    #main { height: 1fr; }
+    #sidebar { width: 30; border: solid cyan; background: $panel; }
     #sidebar Label { padding: 0 1; text-style: bold; }
-    #chat-panel { border: solid green; }
-    #output-panel { border: solid yellow; }
-    #chat-input { dock: bottom; height: 3; }
-    #sessions-list { height: 8; margin: 0 1; }
+    #sessions-list { height: 1fr; margin: 0 1; }
     #sessions-list ListItem { padding: 0 1; }
     #sessions-list ListItem:hover { background: $boost; }
-    .active-session { background: $accent; color: $text; }
+    #chat-panel { width: 1fr; border: solid green; }
+    #chat-header { padding: 0 1; background: $panel; }
+    #chat-history { height: 1fr; }
+    #chat-input { dock: bottom; height: 3; }
+    #activity-panel { width: 34; border: solid yellow; background: $panel; }
+    #activity-header { padding: 0 1; background: $panel; text-style: bold; }
+    #activity-text { padding: 1; }
     """
 
     BINDINGS = [
-        ("ctrl+c", "quit", "Quit"),
-        ("ctrl+n", "new_session", "New Chat"),
-        ("ctrl+m", "command_center", "Command Center"),
-        ("ctrl+s", "toggle_sidebar", "Sidebar"),
-        ("ctrl+r", "refresh", "Refresh"),
-        ("ctrl+a", "toggle_output", "Output"),
+        Binding("ctrl+c", "quit", "Quit"),
+        Binding("ctrl+n", "new_session", "New"),
+        Binding("ctrl+p", "command_center", "Command"),
+        Binding("ctrl+m", "command_center", "Models"),
+        Binding("ctrl+s", "toggle_sidebar", "Sessions"),
+        Binding("ctrl+a", "toggle_activity", "Activity"),
+        Binding("ctrl+r", "refresh", "Refresh"),
+        Binding("ctrl+d", "delete_session", "Delete"),
     ]
 
     def __init__(self, backend_url: str = BACKEND_URL):
         super().__init__()
-        self.backend_url = backend_url
-        self.session_id: Optional[str] = None
+        self.client = BackendClient(backend_url)
+        self.state = TuiState()
+        self.available_models: dict[str, list[dict]] = {}
         self.current_model = "sonnet"
-        self.current_provider = "Anthropic"
-        self.messages: list[dict] = []
-        self.available_models: dict = {}
-        self.sessions: list[dict] = []
+        self.current_provider = "anthropic"
+        self._session_ids_in_view: list[str] = []
+        self._event_task: asyncio.Task | None = None
+        self._event_stop: asyncio.Event | None = None
+        self._watched_session_id: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -153,242 +179,381 @@ class NeoSwarmTUI(App):
                 with Vertical(id="sidebar"):
                     yield Label("Sessions")
                     yield ListView(id="sessions-list")
-                    yield Label("Tools")
-                    yield Static("  • bash\n  • write\n  • read\n  • grep", id="tools-list")
+                    yield Static("^N new · ^P commands", id="session-hint")
                 with Vertical(id="chat-panel"):
-                    yield Static("[bold]Chat[/bold] sonnet", id="chat-header")
+                    yield Static(id="chat-header")
                     yield TA(id="chat-history")
-                    yield Input(placeholder="Type message or /model <n>...", id="chat-input")
-                with Vertical(id="output-panel"):
-                    yield Static("[bold]Output[/bold]", id="output-header")
-                    yield Static("", id="output-text")
+                    yield Input(
+                        placeholder="Message NeoSwarm, or type /help...",
+                        id="chat-input",
+                    )
+                with Vertical(id="activity-panel"):
+                    yield Static("Activity", id="activity-header")
+                    yield Static(id="activity-text")
         yield Footer()
 
     async def on_mount(self) -> None:
-        self.connect_backend()
-        await self.fetch_models()
-        await self.fetch_sessions()
+        await self.refresh_backend()
+        self.query_one("#chat-input", Input).focus()
 
-    @work
-    async def connect_backend(self):
+    def on_unmount(self) -> None:
+        self._stop_event_stream()
+
+    async def refresh_backend(self) -> None:
+        if not await self.client.health():
+            self.state.connection_status = "offline"
+            self.state.connection_detail = f"Cannot reach {self.client.backend_url}"
+            self.render_all()
+            return
+
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{self.backend_url}/api/health/check", timeout=5.0)
-                self.update_status("[green]Connected[/green]" if resp.status_code == 200 else "[red]Error[/red]")
-        except Exception as e:
-            self.update_status(f"[red]Offline: {e}[/red]")
+            self.available_models = await self.client.models()
+            self.state.replace_sessions(await self.client.sessions())
+        except BackendRequestError as exc:
+            self.state.connection_status = "offline"
+            self.state.connection_detail = str(exc)
+            self.render_all()
+            return
 
-    async def fetch_models(self):
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{self.backend_url}/api/agents/models", timeout=10.0)
-                if resp.status_code == 200:
-                    self.available_models = resp.json().get("models", {})
-                    total = sum(len(v) for v in self.available_models.values())
-                    self.update_status(f"[green]Loaded {total} models[/green]")
-        except Exception:
-            self.update_status("[yellow]Using defaults[/yellow]")
+        self.state.connection_status = "connected"
+        active = self.state.active_session()
+        if active:
+            self.current_model = active.get("model", self.current_model)
+            self.current_provider = active.get("provider", self.current_provider)
+            self._watch_session(active["id"])
+        self.render_all()
 
-    async def fetch_sessions(self):
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{self.backend_url}/api/agents/sessions", timeout=5.0)
-                if resp.status_code == 200:
-                    self.sessions = resp.json().get("sessions", [])
-                    self.render_sessions()
-        except Exception:
-            pass
+    def render_all(self) -> None:
+        self._render_sessions()
+        self._render_chat()
+        self._render_activity()
 
-    def render_sessions(self):
+    def _render_sessions(self) -> None:
         list_view = self.query_one("#sessions-list", ListView)
         list_view.clear()
-        if not self.sessions:
-            list_view.append(ListItem(Static("  No sessions", id="no-sessions")))
+        ordered = sorted(
+            self.state.sessions.values(),
+            key=lambda item: item.get("created_at", ""),
+            reverse=True,
+        )
+        self._session_ids_in_view = []
+        if not ordered:
+            list_view.append(ListItem(Static("  No sessions yet")))
             return
-        for s in self.sessions:
-            sid = s.get("id", "")[:8]
-            model = s.get("model", "?")
-            is_active = sid == (self.session_id[:8] if self.session_id else None)
-            prefix = "▶ " if is_active else "  "
-            list_view.append(ListItem(Static(f"{prefix}[cyan]{sid}[/cyan] ({model})", classes="active-session" if is_active else "")))
+        for session in ordered:
+            session_id = session["id"]
+            self._session_ids_in_view.append(session_id)
+            active = session_id == self.state.active_session_id
+            marker = "▶" if active else " "
+            title = str(session.get("name") or "Untitled")[:20]
+            status = str(session.get("status", "idle"))
+            model = str(session.get("model", "?"))[:12]
+            list_view.append(
+                ListItem(Static(f"{marker} {title}\n  {model} · {status}"))
+            )
 
-    def update_status(self, status: str):
-        try:
-            header = self.query_one("#chat-header", Static)
-            header.update(f"[bold]Chat[/bold] {self.current_provider}/{self.current_model} | {status}")
-        except Exception:
-            pass
+    def _render_chat(self) -> None:
+        session = self.state.active_session()
+        header = self.query_one("#chat-header", Static)
+        history = self.query_one("#chat-history", TA)
+        if not session:
+            header.update("[bold]Chat[/bold] — start a new session with ^N")
+            history.text = ""
+            return
+
+        header.update(
+            f"[bold]Chat[/bold]  {session.get('provider', self.current_provider)}/"
+            f"{session.get('model', self.current_model)}  ·  {session.get('status', 'idle')}"
+        )
+        lines: list[str] = []
+        for message in self.state.messages_for():
+            if message.get("hidden"):
+                continue
+            role = message.get("role", "system")
+            content = self._format_message_content(message.get("content"))
+            if role == "user":
+                lines.append(f"You: {content}")
+            elif role == "assistant":
+                lines.append(f"Neo: {content}")
+            elif role == "thinking":
+                lines.append(f"Thinking: {content}")
+            elif role == "tool_call":
+                lines.append(f"▸ Tool: {content}")
+            elif role == "tool_result":
+                lines.append(f"↳ Result: {content}")
+            else:
+                lines.append(f"[{role}] {content}")
+        history.text = "\n\n".join(lines)
+
+    def _render_activity(self) -> None:
+        panel = self.query_one("#activity-text", Static)
+        session = self.state.active_session()
+        lines = [f"Connection: {self.state.connection_status}"]
+        if self.state.connection_detail:
+            lines.append(self.state.connection_detail[:180])
+        lines.append("")
+        if session:
+            lines.extend(
+                [
+                    f"Model: {session.get('provider', self.current_provider)}/{session.get('model', self.current_model)}",
+                    f"Status: {session.get('status', 'idle')}",
+                    f"Cost: ${float(session.get('cost_usd', 0) or 0):.4f}",
+                ]
+            )
+            approvals = self.state.pending_approvals.get(session["id"], [])
+            if approvals:
+                lines.extend(["", "Approvals:"])
+                for approval in approvals:
+                    lines.append(f"• {approval.get('tool_name', 'Tool')}")
+                lines.append("/approve or /deny [reason]")
+        else:
+            lines.append("No active session")
+        panel.update("\n".join(lines))
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        message = event.value.strip()
-        if not message:
+        text = event.value.strip()
+        if not text:
             return
         event.input.clear()
-        if message.startswith("/model "):
-            await self._handle_inline_model(message)
-            return
-        if message in ("/model", "/new", "/clear", "/refresh", "/sidebar", "/output"):
-            self._handle_command(message)
-            return
-        await self.send_message(message)
+        if text.startswith("/"):
+            await self._handle_command(text)
+        else:
+            await self.send_message(text)
 
-    def _handle_command(self, cmd: str):
-        {
-            "/model": lambda: asyncio.create_task(self.action_command_center()),
-            "/new": lambda: self.action_new_session(),
-            "/clear": lambda: self.action_new_session(),
-            "/refresh": lambda: self.action_refresh(),
-            "/sidebar": lambda: self.action_toggle_sidebar(),
-            "/output": lambda: self.action_toggle_output(),
-        }.get(cmd, lambda: None)()
+    async def _handle_command(self, command: str) -> None:
+        name, _, argument = command.partition(" ")
+        argument = argument.strip()
+        if name == "/new":
+            self.action_new_session()
+        elif name == "/model":
+            if argument:
+                self._select_model(argument)
+            else:
+                await self.action_command_center()
+        elif name == "/refresh":
+            await self.refresh_backend()
+        elif name == "/sidebar":
+            self.action_toggle_sidebar()
+        elif name in {"/output", "/activity"}:
+            self.action_toggle_activity()
+        elif name == "/delete":
+            await self.action_delete_session()
+        elif name == "/approve":
+            await self._resolve_approval("allow")
+        elif name == "/deny":
+            await self._resolve_approval("deny", argument or None)
+        elif name == "/help":
+            self.state.connection_detail = "Commands: /new /model /refresh /delete /approve /deny"
+            self.render_all()
+        else:
+            self.state.connection_detail = f"Unknown command: {name}. Try /help."
+            self.render_all()
 
-    async def _handle_inline_model(self, message: str):
-        arg = message[7:].strip()
-        if not arg:
-            await self.action_command_center()
-            return
-        try:
-            idx = int(arg)
-            all_models = []
-            for provider, models in self.available_models.items():
-                for m in models:
-                    all_models.append({"provider": provider, **m})
-            if 1 <= idx <= len(all_models):
-                selected = all_models[idx - 1]
-                self.current_model = selected.get("value", arg)
-                self.current_provider = selected.get("provider", "")
-                self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
+    async def send_message(self, prompt: str) -> None:
+        session = self.state.active_session()
+        if session is None:
+            session = await self.create_session()
+            if session is None:
                 return
-        except ValueError:
-            pass
-        for provider, models in self.available_models.items():
-            for m in models:
-                value = m.get("value", "")
-                label = m.get("label", value)
-                if arg.lower() in value.lower() or arg.lower() in label.lower():
-                    self.current_model = value
-                    self.current_provider = provider
-                    self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
-                    return
-        self.update_status(f"[red]Model '{arg}' not found. Press ^m for picker.[/red]")
-
-    async def send_message(self, message: str):
-        chat_history = self.query_one("#chat-history", TA)
-        self.messages.append({"role": "user", "content": message})
-        chat_history.text = (chat_history.text or "") + f"You: {message}\n"
-        if not self.session_id:
-            await self.create_session()
-        if self.session_id:
-            await self.prompt_session(message)
-
-    async def create_session(self):
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.backend_url}/api/agents/launch",
-                    json={"model": self.current_model, "mode": "chat"},
-                )
-                if resp.status_code == 200:
-                    body = resp.json()
-                    self.session_id = body.get("session_id")
-                    await self.fetch_sessions()
-                    self.update_status(f"[green]Session {self.session_id[:8] if self.session_id else ''} created[/green]")
-                else:
-                    self.update_status(f"[red]Create session failed: {resp.status_code}[/red]")
-        except Exception as e:
-            self.update_status(f"[red]Error: {e}[/red]")
+            await self.client.send(
+                session["id"],
+                {
+                    "prompt": prompt,
+                    "model": self.current_model,
+                    "provider": self.current_provider,
+                },
+            )
+            self.state.upsert_session(await self.client.session(session["id"]))
+            self._watch_session(session["id"])
+        except BackendRequestError as exc:
+            self.state.connection_detail = str(exc)
+        self.render_all()
 
-    async def prompt_session(self, prompt: str):
-        output_text = self.query_one("#output-text", Static)
-        output_text.update("[yellow]Thinking...[/yellow]")
+    async def create_session(self) -> dict[str, Any] | None:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.backend_url}/api/agents/sessions/{self.session_id}/message",
-                    json={"prompt": prompt},
-                )
-                if resp.status_code == 200:
-                    result = resp.json()
-                    response = result.get("response", result.get("content", "(no response)"))
-                    self.messages.append({"role": "assistant", "content": response})
-                    chat_history = self.query_one("#chat-history", TA)
-                    chat_history.text = (chat_history.text or "") + f"Neo: {response}\n"
-                    output_text.update(response[:500])
-        except Exception as e:
-            output_text.update(f"[red]Error: {e}[/red]")
+            session = await self.client.launch(
+                {
+                    "name": "TUI chat",
+                    "model": self.current_model,
+                    "mode": "chat",
+                    "provider": self.current_provider,
+                }
+            )
+        except BackendRequestError as exc:
+            self.state.connection_detail = str(exc)
+            self.render_all()
+            return None
+        self.state.upsert_session(session, activate=True)
+        self._watch_session(session["id"])
+        self.render_all()
+        return session
+
+    async def _resolve_approval(self, behavior: str, message: str | None = None) -> None:
+        session = self.state.active_session()
+        if session is None:
+            return
+        approvals = self.state.pending_approvals.get(session["id"], [])
+        if not approvals:
+            self.state.connection_detail = "No approval is waiting."
+            self.render_all()
+            return
+        request_id = approvals[0].get("id")
+        if not isinstance(request_id, str):
+            return
+        try:
+            await self.client.respond_to_approval(request_id, behavior, message)
+            self.state.resolve_approval(session["id"], request_id)
+        except (BackendRequestError, ValueError) as exc:
+            self.state.connection_detail = str(exc)
+        self.render_all()
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Switch to a session from the sidebar."""
         if event.list_view.id != "sessions-list":
             return
-        if not self.sessions:
+        index = event.list_view.index
+        if index is None or index < 0 or index >= len(self._session_ids_in_view):
             return
-        idx = event.list_view.index
-        if idx < len(self.sessions):
-            s = self.sessions[idx]
-            self.session_id = s.get("id")
-            self.current_model = s.get("model", self.current_model)
-            self.current_provider = s.get("provider", self.current_provider)
-            self.messages = s.get("messages", [])
-            chat_history = self.query_one("#chat-history", TA)
-            chat_history.text = "\n".join(
-                f"{'You' if m.get('role') == 'user' else 'Neo'}: {m.get('content', '')}"
-                for m in self.messages
-            ) or ""
-            self.update_status(f"[green]Switched to session {self.session_id[:8]}[/green]")
-            self.render_sessions()
+        session_id = self._session_ids_in_view[index]
+        self.state.activate(session_id)
+        session = self.state.active_session()
+        if session:
+            self.current_model = session.get("model", self.current_model)
+            self.current_provider = session.get("provider", self.current_provider)
+            self._watch_session(session_id)
+        self.render_all()
 
-    async def action_delete_session(self, session_id: str):
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.delete(f"{self.backend_url}/api/agents/sessions/{session_id}")
-                if resp.status_code == 200:
-                    if self.session_id == session_id:
-                        self.session_id = None
-                        self.messages = []
-                        self.query_one("#chat-history", TA).clear()
-                    await self.fetch_sessions()
-                    self.update_status("[green]Session deleted[/green]")
-        except Exception as e:
-            self.update_status(f"[red]Delete failed: {e}[/red]")
+    def action_new_session(self) -> None:
+        self.state.activate(None)
+        self._stop_event_stream()
+        self.render_all()
+        self.query_one("#chat-input", Input).focus()
 
-    def action_new_session(self):
-        self.session_id = None
-        self.messages = []
-        self.query_one("#chat-history", TA).clear()
-        self.render_sessions()
-        self.update_status("[cyan]New session[/cyan]")
-
-    async def action_command_center(self):
+    async def action_command_center(self) -> None:
         if not self.available_models:
-            self.update_status("[yellow]No models loaded. Press ^r to refresh.[/yellow]")
+            self.state.connection_detail = "No models are available. Check provider settings."
+            self.render_all()
             return
-        result = await self.push_screen_wait(CommandCenter(self.available_models, self.current_model))
-        if result is None:
-            return
+        result = await self.push_screen_wait(
+            CommandCenter(self.available_models, self.current_model)
+        )
         if isinstance(result, dict):
-            self.current_model = result.get("value", result)
-            self.current_provider = result.get("provider", "")
-            self.update_status(f"[green]Model: {self.current_model} ({self.current_provider})[/green]")
+            self.current_model = str(result.get("value", self.current_model))
+            self.current_provider = self._provider_id(str(result.get("provider", "")))
+            self.state.connection_detail = (
+                f"Selected {self.current_provider}/{self.current_model}"
+            )
+            self.render_all()
         elif isinstance(result, str):
-            self._handle_command(result)
+            await self._handle_command(result)
 
-    def action_toggle_sidebar(self):
+    def _select_model(self, query: str) -> None:
+        needle = query.lower()
+        for provider, models in self.available_models.items():
+            for model in models:
+                value = str(model.get("value", ""))
+                label = str(model.get("label", value))
+                if needle in value.lower() or needle in label.lower():
+                    self.current_model = value
+                    self.current_provider = self._provider_id(provider)
+                    self.state.connection_detail = (
+                        f"Selected {self.current_provider}/{self.current_model}"
+                    )
+                    self.render_all()
+                    return
+        self.state.connection_detail = f"Model '{query}' was not found."
+        self.render_all()
+
+    async def action_delete_session(self) -> None:
+        session = self.state.active_session()
+        if session is None:
+            return
+        try:
+            await self.client.delete(session["id"])
+        except BackendRequestError as exc:
+            self.state.connection_detail = str(exc)
+            self.render_all()
+            return
+        self._stop_event_stream()
+        self.state.remove_session(session["id"])
+        active = self.state.active_session()
+        if active:
+            self._watch_session(active["id"])
+        self.render_all()
+
+    def action_toggle_sidebar(self) -> None:
         sidebar = self.query_one("#sidebar")
         sidebar.display = not sidebar.display
-        if sidebar.display:
-            asyncio.create_task(self.fetch_sessions())
 
-    def action_toggle_output(self):
-        self.query_one("#output-panel").display = not self.query_one("#output-panel").display
+    def action_toggle_activity(self) -> None:
+        panel = self.query_one("#activity-panel")
+        panel.display = not panel.display
 
-    def action_refresh(self):
-        self.connect_backend()
-        asyncio.create_task(self.fetch_models())
-        asyncio.create_task(self.fetch_sessions())
+    async def action_refresh(self) -> None:
+        await self.refresh_backend()
+
+    def _watch_session(self, session_id: str) -> None:
+        if (
+            self._event_task
+            and not self._event_task.done()
+            and self._event_stop
+            and not self._event_stop.is_set()
+            and self._watched_session_id == session_id
+        ):
+            return
+        self._stop_event_stream()
+        stop = asyncio.Event()
+        self._event_stop = stop
+        self._watched_session_id = session_id
+        self._event_task = asyncio.create_task(self._consume_session_events(session_id, stop))
+
+    def _stop_event_stream(self) -> None:
+        if self._event_stop:
+            self._event_stop.set()
+        if self._event_task and not self._event_task.done():
+            self._event_task.cancel()
+        self._event_stop = None
+        self._event_task = None
+        self._watched_session_id = None
+
+    async def _consume_session_events(self, session_id: str, stop: asyncio.Event) -> None:
+        try:
+            async for event in self.client.session_events(session_id, stop):
+                if event.event == "connection:open":
+                    try:
+                        self.state.upsert_session(await self.client.session(session_id))
+                    except BackendRequestError:
+                        pass
+                self.state.apply(session_id, event)
+                self.render_all()
+        except asyncio.CancelledError:
+            return
+
+    @staticmethod
+    def _provider_id(provider: str) -> str:
+        return {
+            "google": "google",
+            "github models": "copilot",
+        }.get(provider.lower(), provider.lower() or "anthropic")
+
+    @staticmethod
+    def _format_message_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, dict):
+            if "text" in content:
+                return str(content["text"])
+            if "tool" in content:
+                tool_input = content.get("input", {})
+                rendered = json.dumps(tool_input, ensure_ascii=False)
+                return f"{content['tool']} {rendered[:500]}"
+            return json.dumps(content, ensure_ascii=False)[:800]
+        if isinstance(content, list):
+            return json.dumps(content, ensure_ascii=False)[:800]
+        return str(content)
 
 
-def run_tui():
+def run_tui() -> None:
     NeoSwarmTUI(backend_url=BACKEND_URL).run()
 
 

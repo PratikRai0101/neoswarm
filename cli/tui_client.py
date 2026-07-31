@@ -103,6 +103,14 @@ class BackendClient:
             raise BackendRequestError("backend did not return a new session")
         return session
 
+    async def session(self, session_id: str) -> dict[str, Any]:
+        response = await self._request(
+            "GET", f"/api/agents/sessions/{quote(session_id, safe='')}"
+        )
+        if not response.get("id"):
+            raise BackendRequestError("backend returned an invalid session")
+        return response
+
     async def send(self, session_id: str, payload: dict[str, Any]) -> None:
         await self._request(
             "POST",
@@ -113,6 +121,21 @@ class BackendClient:
     async def delete(self, session_id: str) -> None:
         await self._request(
             "DELETE", f"/api/agents/sessions/{quote(session_id, safe='')}"
+        )
+
+    async def respond_to_approval(
+        self, request_id: str, behavior: str, message: str | None = None
+    ) -> None:
+        if behavior not in {"allow", "deny"}:
+            raise ValueError("approval behavior must be allow or deny")
+        await self._request(
+            "POST",
+            "/api/agents/approval",
+            payload={
+                "request_id": request_id,
+                "behavior": behavior,
+                "message": message,
+            },
         )
 
     async def _request(
