@@ -185,22 +185,6 @@ async def update_settings(body: dict):
     if safe_changed:
         _analytics("settings.changed", {"changed_keys": safe_changed})
 
-    # Identify user in PostHog when profile is set/changed
-    if (current.user_email and current.user_email != getattr(old, "user_email", None)) or \
-       (current.user_name and current.user_name != getattr(old, "user_name", None)):
-        from backend.apps.analytics.collector import identify as _identify
-        id_props = {}
-        if current.user_email:
-            id_props["email"] = current.user_email
-        if current.user_name:
-            id_props["name"] = current.user_name
-        if current.user_use_case:
-            id_props["use_case"] = current.user_use_case
-        if current.user_referral_source:
-            id_props["referral_source"] = current.user_referral_source
-        if id_props:
-            _identify(id_props)
-
     _save_settings(current)
     return {"ok": True, "settings": _public_settings(current)}
 

@@ -2,6 +2,7 @@
 
 import json
 import stat
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -83,3 +84,24 @@ def test_settings_file_is_owner_only(isolated_settings_file):
 
 def test_new_installations_default_to_analytics_opt_out():
     assert AppSettings().analytics_opt_in is False
+
+
+@pytest.mark.asyncio
+async def test_profile_updates_are_never_sent_to_analytics(
+    isolated_settings_file, monkeypatch
+):
+    import backend.apps.analytics.collector as collector
+
+    identify = MagicMock()
+    monkeypatch.setattr(collector, "identify", identify)
+
+    await settings_api.update_settings(
+        {
+            "user_name": "Private Name",
+            "user_email": "private@example.com",
+            "user_use_case": "Private project",
+            "user_referral_source": "Private referral",
+        }
+    )
+
+    identify.assert_not_called()
