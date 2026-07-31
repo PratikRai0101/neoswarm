@@ -1297,11 +1297,10 @@ class AgentManager:
             from backend.apps.agents.providers.base import ToolSchema
 
             def _build_tool_schemas(tool_names: list[str]) -> list[ToolSchema]:
-                """Convert effective tool names to ToolSchema list."""
-                from backend.apps.tools_lib.models import BUILTIN_TOOLS
+                """Build schemas only for tools the native loop can execute."""
+                from backend.apps.agents.tools.registry import get_tool
 
                 schemas = []
-                builtin_map = {t.name: t for t in BUILTIN_TOOLS}
                 all_mcp_tools = load_all_tools()
 
                 for name in tool_names:
@@ -1330,15 +1329,10 @@ class AgentManager:
                                             input_schema=inp_schema,
                                         )
                                     )
-                    elif name in builtin_map:
-                        t = builtin_map[name]
-                        schemas.append(
-                            ToolSchema(
-                                name=name,
-                                description=t.description,
-                                input_schema=t.input_schema or {},
-                            )
-                        )
+                    else:
+                        native_tool = get_tool(name)
+                        if native_tool:
+                            schemas.append(native_tool.to_tool_schema())
                 return schemas
 
             tool_schemas = _build_tool_schemas(effective_allowed)
@@ -1383,6 +1377,13 @@ class AgentManager:
 
             async def _ws_emitter(event_type: str, data: dict) -> None:
                 data["session_id"] = session_id
+                if event_type == "agent:message" and isinstance(data.get("message"), dict):
+                    message_data = dict(data["message"])
+                    message_data["branch_id"] = session.active_branch_id
+                    message = Message(**message_data)
+                    if not any(existing.id == message.id for existing in session.messages):
+                        session.messages.append(message)
+                    data["message"] = message.model_dump(mode="json")
                 await ws_manager.send_to_session(session_id, event_type, data)
 
             agent_loop = AgentLoop(
@@ -1418,6 +1419,11 @@ class AgentManager:
                     },
                 )
                 return
+            finally:
+                try:
+                    await provider.close()
+                except Exception as error:
+                    logger.debug("Provider cleanup failed for %s: %s", session_id, error)
 
             session.tokens["input"] = agent_loop.total_input_tokens
             session.tokens["output"] = agent_loop.total_output_tokens

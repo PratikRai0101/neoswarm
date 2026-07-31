@@ -36,6 +36,30 @@ def test_explicit_provider_aliases_are_normalized():
 
 
 @pytest.mark.asyncio
+async def test_offline_ollama_examples_are_not_advertised(monkeypatch):
+    import httpx
+    import backend.apps.agents.agents as agents_api
+    import backend.apps.settings.settings as settings_api
+
+    class OfflineClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            raise httpx.ConnectError("Ollama unavailable")
+
+    monkeypatch.setattr(httpx, "AsyncClient", OfflineClient)
+    monkeypatch.setattr(settings_api, "load_settings", AppSettings)
+
+    catalog = await agents_api.list_models()
+
+    assert "Ollama" not in catalog["models"]
+
+
+@pytest.mark.asyncio
 async def test_model_catalog_exposes_direct_openai_models_with_a_key(monkeypatch):
     import backend.apps.agents.agents as agents_api
     import backend.apps.settings.settings as settings_api

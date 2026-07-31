@@ -318,8 +318,9 @@ async def list_models():
         visible = []
         for m in models:
             api = m.get("api", "")
-            # Skip subscription-only models (we don't support them)
-            if m.get("subscription_only"):
+            # Skip subscription-only models and static Ollama examples. Local
+            # models are added below only after /api/tags confirms installation.
+            if m.get("subscription_only") or api == "ollama":
                 continue
             if api == "anthropic":
                 has_key = bool(getattr(settings, "anthropic_api_key", None))
