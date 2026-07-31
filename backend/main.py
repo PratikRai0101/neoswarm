@@ -45,24 +45,71 @@ _cors_origins = os.environ.get(
     "NEOSWARM_CORS_ORIGINS",
     "http://localhost:3000,http://127.0.0.1:3000,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
 )
+_allowed_origins = frozenset(
+    origin.strip() for origin in _cors_origins.split(",") if origin.strip()
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in _cors_origins.split(",") if origin.strip()],
+    allow_origins=list(_allowed_origins),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+@app.middleware("http")
+async def reject_untrusted_browser_writes(request: Request, call_next):
+    """Block cross-origin browser mutations against the loopback API.
+
+    CORS prevents a hostile page from reading responses, but a ``no-cors``
+    request can still send writes. Non-browser clients omit Origin and remain
+    supported for the TUI and internal MCP subprocesses.
+    """
+    origin = request.headers.get("origin")
+    if (
+        request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        and origin
+        and origin not in _allowed_origins
+    ):
+        return JSONResponse({"detail": "Origin not allowed"}, status_code=403)
+    return await call_next(request)
+
+
+def _websocket_origin_allowed(websocket: WebSocket) -> bool:
+    """Allow trusted browser origins and non-browser clients without Origin."""
+    origin = websocket.headers.get("origin")
+    return origin is None or origin in _allowed_origins
+
+
 @app.websocket("/ws/agents/{session_id}")
 async def websocket_session(websocket: WebSocket, session_id: str):
+    if not _websocket_origin_allowed(websocket):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
     await ws_manager.connect_session(session_id, websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            msg = json.loads(data)
+            try:
+                msg = json.loads(data)
+            except (json.JSONDecodeError, TypeError):
+                await websocket.send_json(
+                    {"event": "error", "data": {"error": "Invalid JSON message"}}
+                )
+                continue
+            if not isinstance(msg, dict):
+                await websocket.send_json(
+                    {"event": "error", "data": {"error": "Message must be an object"}}
+                )
+                continue
             event = msg.get("event")
             payload = msg.get("data", {})
+            if not isinstance(payload, dict):
+                await websocket.send_json(
+                    {"event": "error", "data": {"error": "Message data must be an object"}}
+                )
+                continue
 
             if event == "agent:send_message":
                 from backend.apps.agents.agent_manager import agent_manager
@@ -99,18 +146,40 @@ async def websocket_session(websocket: WebSocket, session_id: str):
 
                 await agent_manager.stop_agent(session_id)
     except WebSocketDisconnect:
+        pass
+    finally:
         ws_manager.disconnect_session(session_id, websocket)
 
 
 @app.websocket("/ws/dashboard")
 async def websocket_dashboard(websocket: WebSocket):
+    if not _websocket_origin_allowed(websocket):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
     await ws_manager.connect_global(websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            msg = json.loads(data)
+            try:
+                msg = json.loads(data)
+            except (json.JSONDecodeError, TypeError):
+                await websocket.send_json(
+                    {"event": "error", "data": {"error": "Invalid JSON message"}}
+                )
+                continue
+            if not isinstance(msg, dict):
+                await websocket.send_json(
+                    {"event": "error", "data": {"error": "Message must be an object"}}
+                )
+                continue
             event = msg.get("event")
             payload = msg.get("data", {})
+            if not isinstance(payload, dict):
+                await websocket.send_json(
+                    {"event": "error", "data": {"error": "Message data must be an object"}}
+                )
+                continue
 
             if event == "agent:approval_response":
                 from backend.apps.agents.agent_manager import agent_manager
@@ -129,6 +198,8 @@ async def websocket_dashboard(websocket: WebSocket):
                     payload,
                 )
     except WebSocketDisconnect:
+        pass
+    finally:
         ws_manager.disconnect_global(websocket)
 
 
