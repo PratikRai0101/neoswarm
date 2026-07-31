@@ -122,6 +122,10 @@ class BaseProvider(ABC):
         """Resolve a short model name to the full API model ID."""
         ...
 
+    async def close(self) -> None:
+        """Release provider transport resources when a turn is complete."""
+        return None
+
     def clean_tool_schema(self, schema: ToolSchema) -> dict:
         """Convert a ToolSchema to the provider's native tool format.
 

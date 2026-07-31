@@ -1092,6 +1092,7 @@ class AgentManager:
             )
             return {"continue_": True}
 
+        provider = None
         try:
             _, mode_sys_prompt, _ = self._resolve_mode(session.mode)
             from backend.apps.agents.providers.registry import create_provider
@@ -1520,6 +1521,12 @@ class AgentManager:
                     _save_session(session_id, session.model_dump(mode="json"))
                 except Exception as save_e:
                     logger.warning(f"Failed to snapshot session {session_id}: {save_e}")
+        finally:
+            if provider is not None:
+                try:
+                    await provider.close()
+                except Exception as close_error:
+                    logger.debug("Provider cleanup failed: %s", close_error)
 
     async def _stream_text(
         self, session_id: str, msg_id: str, text: str, delay: float = 0.03

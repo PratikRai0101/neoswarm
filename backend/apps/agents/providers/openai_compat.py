@@ -36,6 +36,9 @@ class OpenAICompatProvider(BaseProvider):
             kwargs["base_url"] = base_url
         self.client = AsyncOpenAI(**kwargs)
 
+    async def close(self) -> None:
+        await self.client.close()
+
     def get_model_id(self, short_name: str) -> str:
         # Pass through — user selects exact model ID
         return short_name

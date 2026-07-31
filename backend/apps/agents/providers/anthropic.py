@@ -40,6 +40,9 @@ class AnthropicProvider(BaseProvider):
             kwargs["base_url"] = base_url
         self.client = anthropic.AsyncAnthropic(**kwargs)
 
+    async def close(self) -> None:
+        await self.client.close()
+
     def get_model_id(self, short_name: str) -> str:
         return MODEL_MAP.get(short_name, short_name)
 

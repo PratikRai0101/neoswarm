@@ -1,9 +1,8 @@
-"""
-Browser sub-agent runner.
+"""Provider-agnostic browser sub-agent runner.
 
-Provides a lightweight Anthropic API tool-use loop that drives browser
-interactions directly through ws_manager (no MCP subprocess needed).
-Sub-agents appear as visible AgentSession cards on the dashboard.
+Browser workers reuse NeoSwarm's provider adapters while driving browser
+interactions directly through ``ws_manager``. Sub-agents appear as visible
+AgentSession cards on the dashboard.
 """
 
 import asyncio
@@ -13,32 +12,33 @@ import time
 from datetime import datetime
 from uuid import uuid4
 
-import anthropic
-
 from backend.apps.agents.models import AgentSession, ApprovalRequest, Message
 from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.tools_lib.tools_lib import load_builtin_permissions
 
 logger = logging.getLogger(__name__)
 
-MODEL_MAP = {
-    "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
-}
-
-# Cache of conversation history per browser_id so successive BrowserAgent
-# calls on the same browser can resume rather than restart from scratch.
-# Without this every "swipe right" / "swipe left" call has to take a new
-# screenshot and re-orient itself, costing 30-60s per action.
-_browser_history: dict[str, list[dict]] = {}
+# Cache provider-formatted conversation history per browser and model provider
+# so successive BrowserAgent calls can resume without mixing wire formats.
+_browser_history: dict[tuple[str, str], list] = {}
 # Cap history to prevent unbounded growth on long-lived browsers.
 _MAX_HISTORY_MESSAGES = 30
 
 
 def clear_browser_history(browser_id: str) -> None:
     """Drop cached conversation history for a browser (e.g. when it's closed)."""
-    _browser_history.pop(browser_id, None)
+    for key in [key for key in _browser_history if key[0] == browser_id]:
+        _browser_history.pop(key, None)
+
+
+def _trim_provider_history(messages: list, max_messages: int) -> list:
+    """Bound generic history without cutting into a provider tool-use turn."""
+    if len(messages) <= max_messages:
+        return list(messages)
+    start = len(messages) - max_messages
+    while start > 0 and getattr(messages[start], "role", "") != "user":
+        start -= 1
+    return list(messages[start:])
 
 
 # ---------------------------------------------------------------------------
@@ -115,193 +115,6 @@ _LOOP_WARNING_TEXT = (
     "or (4) call RequestHumanIntervention if you genuinely cannot proceed."
 )
 
-
-def _validate_message_pairing(messages: list[dict]) -> bool:
-    """Verify every tool_result references a tool_use_id from a prior assistant
-    message in the same list. Returns False if there's an orphan, which means
-    the cached history would 400 if sent to the API.
-
-    This is the last line of defense against cache corruption — if it ever
-    returns False on a resume, we drop the cache and start fresh rather than
-    crash on the next API call.
-    """
-    declared_tool_use_ids: set[str] = set()
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content")
-        if role == "assistant" and isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
-                    tu_id = block.get("id")
-                    if tu_id:
-                        declared_tool_use_ids.add(tu_id)
-        elif role == "user" and isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_result":
-                    tr_id = block.get("tool_use_id")
-                    if tr_id and tr_id not in declared_tool_use_ids:
-                        return False
-    return True
-
-
-def _is_fresh_user_message(msg: dict) -> bool:
-    """A 'fresh' user message starts a new turn — string content or a list
-    that contains no tool_result blocks. These are the only safe cut points
-    because they don't reference any prior assistant tool_use blocks."""
-    if msg.get("role") != "user":
-        return False
-    content = msg.get("content")
-    if isinstance(content, str):
-        return True
-    if isinstance(content, list) and not any(
-        isinstance(c, dict) and c.get("type") == "tool_result" for c in content
-    ):
-        return True
-    return False
-
-
-def _summarize_messages(messages: list[dict]) -> str:
-    """Build a programmatic summary of older browser-agent messages.
-
-    Extracts the original user task, a count of tool calls by name with their
-    key parameters, the last few ReportProgress brain states, and the most
-    recent assistant text. No LLM call required — this is purely structural
-    extraction from the existing message history.
-    """
-    if not messages:
-        return ""
-
-    # Find the original user task (first user-text message)
-    initial_task = ""
-    for msg in messages:
-        if msg.get("role") == "user":
-            content = msg.get("content")
-            if isinstance(content, str) and content.strip():
-                initial_task = content.strip()[:300]
-                break
-
-    # Count tool calls by name with key params
-    tool_call_summary: dict[str, list[str]] = {}
-    brain_states: list[str] = []
-    last_assistant_text = ""
-
-    for msg in messages:
-        if msg.get("role") != "assistant":
-            continue
-        content = msg.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            btype = block.get("type")
-            if btype == "tool_use":
-                name = block.get("name", "unknown")
-                inp = block.get("input") or {}
-                if name == "ReportProgress":
-                    # Capture the brain state for inline summary
-                    brain_states.append(
-                        f"  • {inp.get('next_goal', '')[:120]}"
-                    )
-                    continue
-                # Compact one-line description with key params
-                key_param = ""
-                for k in ("index", "key", "url", "selector", "direction", "text"):
-                    if k in inp:
-                        v = str(inp[k])[:40]
-                        key_param = f"{k}={v}"
-                        break
-                desc = f"{name}({key_param})" if key_param else name
-                tool_call_summary.setdefault(name, []).append(desc)
-            elif btype == "text":
-                txt = block.get("text", "").strip()
-                if txt:
-                    last_assistant_text = txt
-
-    # Build the summary text
-    parts = ["[Summary of earlier browser-agent activity]"]
-    if initial_task:
-        parts.append(f'Original task: "{initial_task}"')
-    if tool_call_summary:
-        total = sum(len(v) for v in tool_call_summary.values())
-        parts.append(f"Actions taken ({total} total):")
-        # Show count + a couple of representative examples per tool
-        for name in sorted(tool_call_summary.keys()):
-            calls = tool_call_summary[name]
-            count = len(calls)
-            sample = calls[-1]  # most recent example
-            if count == 1:
-                parts.append(f"  - {sample}")
-            else:
-                parts.append(f"  - {sample} (×{count})")
-    if brain_states:
-        parts.append("Recent intents:")
-        parts.extend(brain_states[-5:])  # last 5 brain states
-    if last_assistant_text:
-        snippet = last_assistant_text[:400]
-        parts.append(f"Last update from assistant: {snippet}")
-    parts.append(
-        "(Earlier turn-by-turn details have been compacted to keep the "
-        "context window manageable. Continue from where you left off.)"
-    )
-    return "\n".join(parts)
-
-
-def _trim_history_by_turns(messages: list[dict], max_messages: int) -> list[dict]:
-    """Compact message history when it exceeds max_messages.
-
-    The Anthropic API requires every `tool_result` block to reference a
-    `tool_use_id` from a previous assistant message. Naive slicing can drop
-    a tool_use while keeping its tool_result, causing 400 errors. This
-    function avoids that by:
-
-    1. Walking forward to find a clean turn boundary (a fresh user-text
-       message that starts a new turn — no tool_result content).
-    2. Summarizing everything BEFORE that boundary into a single user-text
-       message and prepending it to the kept tail.
-    3. If no clean boundary exists at all, returning the original history
-       unchanged. Better to temporarily exceed the cap than to corrupt the
-       conversation and 400 every subsequent request.
-
-    The summary is built programmatically (no LLM call) from the message
-    structure: original task, tool call counts, recent ReportProgress brain
-    states, and last assistant text.
-    """
-    if len(messages) <= max_messages:
-        return list(messages)
-
-    target_tail_size = max_messages - 1  # leave room for the summary message
-    cut_index: int | None = None
-
-    # First pass: walk forward looking for the EARLIEST clean cut point that
-    # gets us under the cap. This preserves the most recent detail.
-    for i in range(1, len(messages)):
-        if not _is_fresh_user_message(messages[i]):
-            continue
-        if len(messages) - i <= target_tail_size:
-            cut_index = i
-            break
-
-    # Second pass: if no cut point gets us under the cap (e.g. the current
-    # turn alone is bigger than max_messages), use the LATEST clean cut point
-    # available. The tail will still exceed the cap, but it's the smallest
-    # safe history we can produce — and any compaction is better than none.
-    if cut_index is None:
-        for i in range(len(messages) - 1, 0, -1):
-            if _is_fresh_user_message(messages[i]):
-                cut_index = i
-                break
-
-    if cut_index is None:
-        # No clean cut anywhere in the history. Return original — better to
-        # exceed the cap than to corrupt the conversation.
-        return list(messages)
-
-    # Compact: summarize messages[0..cut_index-1], prepend as a single
-    # user-text message, then keep messages[cut_index..end] verbatim.
-    summary_text = _summarize_messages(messages[:cut_index])
-    summary_msg = {"role": "user", "content": summary_text}
-    return [summary_msg] + list(messages[cut_index:])
 
 BROWSER_TOOLS_SCHEMA = [
     {
@@ -762,7 +575,7 @@ async def execute_browser_tool(
 
 
 def _format_tool_result(result: dict, tool_name: str) -> list[dict]:
-    """Convert a browser command result dict into Anthropic API content blocks."""
+    """Convert a browser command result into provider-agnostic content blocks."""
     if "error" in result:
         return [{"type": "text", "text": f"Error: {result['error']}"}]
 
@@ -878,67 +691,50 @@ async def run_browser_agent(
         logger.info(f"Browser agent {session_id}: navigated to {initial_url}: {nav_result.get('text', nav_result.get('error', ''))}")
 
     from backend.apps.settings.settings import load_settings
-    from backend.apps.settings.credentials import get_anthropic_client
-    from backend.apps.agents.providers.registry import (
-        _find_builtin_model,
-        resolve_model_id_for_sdk,
-        resolve_aux_model,
-    )
-    browser_settings = load_settings()
-    # Resolve the model string to whatever the API expects.
-    # When the parent session is running on a non-Claude model (e.g. gpt-5.4),
-    # the browser agent inherits it.
-    # Tool-use fidelity for browser-specific tools (BrowserNavigate, click,
-    # type, etc.) varies by provider — if translation is poor, the user
-    # should manually switch this session back to Claude in the model picker.
-    if _find_builtin_model(model) is not None:
-        api_model = resolve_model_id_for_sdk(model, browser_settings)
-    else:
-        # Unknown model string — fall back to whatever aux model is available
-        try:
-            api_model, _ = await resolve_aux_model(browser_settings, preferred_tier="haiku")
-        except ValueError:
-            # Nothing connected at all — surface a clear error so the caller
-            # (parent agent) sees it in the tool result instead of crashing.
-            session.status = "error"
-            error_text = (
-                "Browser agent requires an active LLM subscription. "
-                "Connect Claude, Codex, or Gemini in Settings."
-            )
-            err_msg = Message(role="system", content=f"Error: {error_text}")
-            session.messages.append(err_msg)
-            await ws_manager.send_to_session(session_id, "agent:message", {
-                "session_id": session_id,
-                "message": err_msg.model_dump(mode="json"),
-            })
-            await ws_manager.send_to_session(session_id, "agent:status", {
-                "session_id": session_id,
-                "status": "error",
-                "session": session.model_dump(mode="json"),
-            })
-            return {
-                "session_id": session_id,
-                "browser_id": browser_id,
-                "summary": f"Error: {error_text}",
-                "action_log": [],
-                "final_screenshot": None,
-            }
-    client = get_anthropic_client(browser_settings)
+    from backend.apps.agents.providers.base import ProviderMessage, ToolSchema
+    from backend.apps.agents.providers.registry import create_provider, provider_for_model
 
-    # Resume prior conversation on this browser if we have one cached. This
-    # lets the sub-agent skip the "take a screenshot to figure out where I am"
-    # cycle every time the parent issues a new task. Defensively validate
-    # the cache — if it's somehow corrupted (orphaned tool_use_ids), drop
-    # it and start fresh rather than crash on the next API call.
-    prior_messages = _browser_history.get(browser_id) or []
-    if prior_messages and not _validate_message_pairing(prior_messages):
-        logger.warning(
-            f"[browser-agent {session_id}] cached history for {browser_id} has "
-            f"orphaned tool_use_ids — dropping cache and starting fresh"
+    browser_settings = load_settings()
+    parent = agent_manager.sessions.get(parent_session_id) if parent_session_id else None
+    fallback_provider = parent.provider if parent else "anthropic"
+    provider_name = provider_for_model(model, fallback=fallback_provider)
+    session.provider = provider_name
+    try:
+        provider = create_provider(provider_name, browser_settings)
+    except ValueError as exc:
+        session.status = "error"
+        error_text = f"Browser agent cannot use {provider_name}/{model}: {exc}"
+        err_msg = Message(role="system", content=f"Error: {error_text}")
+        session.messages.append(err_msg)
+        await ws_manager.send_to_session(session_id, "agent:message", {
+            "session_id": session_id,
+            "message": err_msg.model_dump(mode="json"),
+        })
+        await ws_manager.send_to_session(session_id, "agent:status", {
+            "session_id": session_id,
+            "status": "error",
+            "session": session.model_dump(mode="json"),
+        })
+        return {
+            "session_id": session_id,
+            "browser_id": browser_id,
+            "summary": f"Error: {error_text}",
+            "action_log": [],
+            "final_screenshot": None,
+        }
+
+    browser_tools = [
+        ToolSchema(
+            name=item["name"],
+            description=item["description"],
+            input_schema=item["input_schema"],
         )
-        _browser_history.pop(browser_id, None)
-        prior_messages = []
-    messages: list[dict] = list(prior_messages) + [{"role": "user", "content": task}]
+        for item in BROWSER_TOOLS_SCHEMA
+    ]
+    history_key = (browser_id, provider_name)
+    prior_messages = _browser_history.get(history_key) or []
+    messages: list[ProviderMessage] = list(prior_messages)
+    messages.append(provider.format_user_message(task))
     action_log: list[dict] = []
     final_screenshot: str | None = None
 
@@ -972,11 +768,11 @@ async def run_browser_agent(
             if cancel_event.is_set():
                 break
 
-            response = await _cancellable(client.messages.create(
-                model=api_model,
+            response = await _cancellable(provider.create_message(
+                model=model,
                 max_tokens=4096,
                 system=SYSTEM_PROMPT,
-                tools=BROWSER_TOOLS_SCHEMA,
+                tools=browser_tools,
                 messages=messages,
             ))
             if response is None:
@@ -984,30 +780,22 @@ async def run_browser_agent(
             # Guard against empty content (e.g. upstream API error that
             # the SDK parsed into a partial response object).
             if not response.content:
-                logger.warning(f"Browser agent {session_id}: empty response content from {api_model}")
+                logger.warning(f"Browser agent {session_id}: empty response content from {provider_name}/{model}")
                 break
 
-            # Track token usage from browser agent API calls
-            if hasattr(response, 'usage') and response.usage:
-                session.tokens["input"] = session.tokens.get("input", 0) + (response.usage.input_tokens or 0)
-                session.tokens["output"] = session.tokens.get("output", 0) + (response.usage.output_tokens or 0)
+            # Track normalized usage from every provider adapter.
+            if response.usage:
+                session.tokens["input"] = session.tokens.get("input", 0) + response.usage.get("input_tokens", 0)
+                session.tokens["output"] = session.tokens.get("output", 0) + response.usage.get("output_tokens", 0)
 
-            assistant_content = []
             text_parts = []
             tool_uses = []
 
             for block in response.content:
                 if block.type == "text":
                     text_parts.append(block.text)
-                    assistant_content.append({"type": "text", "text": block.text})
-                elif block.type == "tool_use":
-                    tool_uses.append(block)
-                    assistant_content.append({
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
-                    })
+                elif block.type == "tool_use" and block.tool_call:
+                    tool_uses.append(block.tool_call)
 
             if text_parts:
                 asst_msg = Message(
@@ -1031,7 +819,7 @@ async def run_browser_agent(
                     "message": tool_msg.model_dump(mode="json"),
                 })
 
-            messages.append({"role": "assistant", "content": assistant_content})
+            messages.append(provider.format_assistant_message(response))
 
             if response.stop_reason != "tool_use":
                 break
@@ -1083,11 +871,9 @@ async def run_browser_agent(
                         "session_id": session_id,
                         "message": brain_msg.model_dump(mode="json"),
                     })
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": [{"type": "text", "text": "Progress recorded."}],
-                    })
+                    tool_results.append(provider.format_tool_result(
+                        tu.id, [{"type": "text", "text": "Progress recorded."}]
+                    ))
                     continue
 
                 # Reject action tools when ReportProgress is missing this turn.
@@ -1105,12 +891,9 @@ async def run_browser_agent(
                         "again: emit ReportProgress and your action tool(s) in the "
                         "same response."
                     )
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": [{"type": "text", "text": rejection_text}],
-                        "is_error": True,
-                    })
+                    tool_results.append(provider.format_tool_result(
+                        tu.id, [{"type": "text", "text": rejection_text}]
+                    ))
                     result_msg = Message(
                         role="tool_result",
                         content={
@@ -1141,11 +924,9 @@ async def run_browser_agent(
                             result_text = f"User skipped this intervention and said: \"{user_message}\"\nAddress what the user said and adapt your approach accordingly."
                         else:
                             result_text = "User skipped this intervention. Try a different approach or move on."
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": [{"type": "text", "text": result_text}],
-                    })
+                    tool_results.append(provider.format_tool_result(
+                        tu.id, [{"type": "text", "text": result_text}]
+                    ))
                     result_msg = Message(
                         role="tool_result",
                         content={"text": result_text, "tool_name": tu.name, "elapsed_ms": 0},
@@ -1161,11 +942,9 @@ async def run_browser_agent(
 
                 if policy == "deny":
                     denied_text = f"Tool {tu.name} is denied by permission policy."
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": [{"type": "text", "text": denied_text}],
-                    })
+                    tool_results.append(provider.format_tool_result(
+                        tu.id, [{"type": "text", "text": denied_text}]
+                    ))
                     result_msg = Message(
                         role="tool_result",
                         content={"text": denied_text, "tool_name": tu.name, "elapsed_ms": 0},
@@ -1183,11 +962,9 @@ async def run_browser_agent(
                     )
                     if decision.get("behavior") == "deny":
                         denied_text = decision.get("message") or f"Tool {tu.name} denied by user."
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tu.id,
-                            "content": [{"type": "text", "text": denied_text}],
-                        })
+                        tool_results.append(provider.format_tool_result(
+                            tu.id, [{"type": "text", "text": denied_text}]
+                        ))
                         result_msg = Message(
                             role="tool_result",
                             content={"text": denied_text, "tool_name": tu.name, "elapsed_ms": 0},
@@ -1241,12 +1018,7 @@ async def run_browser_agent(
                     content_blocks = content_blocks + [
                         {"type": "text", "text": f"\n\n⚠️ {warning}"}
                     ]
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": content_blocks,
-                    **({"is_error": True} if is_loop else {}),
-                })
+                tool_results.append(provider.format_tool_result(tu.id, content_blocks))
 
                 result_text = result.get("text", result.get("error", ""))
                 result_msg = Message(
@@ -1259,7 +1031,7 @@ async def run_browser_agent(
                     "message": result_msg.model_dump(mode="json"),
                 })
 
-            messages.append({"role": "user", "content": tool_results})
+            messages.append(ProviderMessage(role="tool_result", content=tool_results))
 
             if cancelled:
                 break
@@ -1303,12 +1075,9 @@ async def run_browser_agent(
             except Exception:
                 pass
 
-        # Persist conversation history so the next BrowserAgent call on this
-        # browser can resume rather than re-orient. Trim to the most recent
-        # _MAX_HISTORY_MESSAGES turns to keep token usage bounded — but
-        # never split a tool_use ↔ tool_result pair across the cut, or the
-        # next API request will 400.
-        _browser_history[browser_id] = _trim_history_by_turns(
+        # Keep provider-specific history so future work on this browser can
+        # resume without mixing Anthropic/OpenAI/Ollama message formats.
+        _browser_history[history_key] = _trim_provider_history(
             messages, _MAX_HISTORY_MESSAGES,
         )
 
@@ -1350,6 +1119,10 @@ async def run_browser_agent(
             "action_log": action_log,
             "final_screenshot": None,
         }
+    finally:
+        close = getattr(provider, "close", None)
+        if close:
+            await close()
 
 
 async def _create_browser_card(dashboard_id: str, url: str, parent_session_id: str | None = None) -> str:

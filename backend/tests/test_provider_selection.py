@@ -25,6 +25,7 @@ def test_known_models_have_one_canonical_provider():
     assert provider_for_model("sonnet") == "anthropic"
     assert provider_for_model("llama3.3") == "ollama"
     assert provider_for_model("gpt-5.4") == "openai"
+    assert provider_for_model("locally-pulled-model:latest", "ollama") == "ollama"
     assert get_api_type("gpt-5.4") == "openai"
 
 
