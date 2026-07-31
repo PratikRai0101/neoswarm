@@ -40,6 +40,7 @@ else:
     DATA_ROOT = os.path.join(_BACKEND_DIR, "data")
 
 SESSIONS_DIR = os.path.join(DATA_ROOT, "sessions")
+MISSIONS_DIR = os.path.join(DATA_ROOT, "missions")
 TOOLS_DIR = os.path.join(DATA_ROOT, "tools")
 SETTINGS_DIR = os.path.join(DATA_ROOT, "settings")
 MODES_DIR = os.path.join(DATA_ROOT, "modes")

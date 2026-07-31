@@ -14,6 +14,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -76,6 +77,57 @@ class OrchestratorSession:
     error: str | None = None
 
 
+def mission_from_dict(data: dict[str, Any]) -> OrchestratorSession:
+    """Restore a mission from its persisted REST-safe representation."""
+    tasks = [
+        SubTask(
+            id=item["id"],
+            description=item["description"],
+            status=TaskStatus(item.get("status", "pending")),
+            assigned_worker_id=item.get("assigned_worker_id"),
+            result=item.get("result"),
+            error=item.get("error"),
+            created_at=datetime.fromisoformat(item["created_at"]),
+            started_at=datetime.fromisoformat(item["started_at"])
+            if item.get("started_at")
+            else None,
+            completed_at=datetime.fromisoformat(item["completed_at"])
+            if item.get("completed_at")
+            else None,
+        )
+        for item in data.get("tasks", [])
+    ]
+    workers = [
+        Worker(
+            id=item["id"],
+            name=item["name"],
+            status=WorkerStatus(item.get("status", "idle")),
+            current_task_id=item.get("current_task_id"),
+            session_id=item.get("session_id"),
+            model=item.get("model", data.get("model", "sonnet")),
+        )
+        for item in data.get("workers", [])
+    ]
+    return OrchestratorSession(
+        id=data["id"],
+        mission=data["mission"],
+        model=data.get("model", "sonnet"),
+        provider=data.get("provider"),
+        execution_mode=data.get("execution_mode", "parallel"),
+        target_directory=data.get("target_directory"),
+        isolate_workers=bool(data.get("isolate_workers", False)),
+        decomposed_tasks=tasks,
+        workers=workers,
+        status=data.get("status", "pending"),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        completed_at=datetime.fromisoformat(data["completed_at"])
+        if data.get("completed_at")
+        else None,
+        final_result=data.get("final_result"),
+        error=data.get("error"),
+    )
+
+
 def mission_to_dict(session: OrchestratorSession) -> dict[str, Any]:
     """Return the REST-safe representation of a mission and its workers."""
     return {
@@ -115,10 +167,12 @@ def mission_to_dict(session: OrchestratorSession) -> dict[str, Any]:
 class Orchestrator:
     """Run durable-in-memory missions over the existing AgentManager seam."""
 
-    def __init__(self, agent_manager=None):
+    def __init__(self, agent_manager=None, storage_dir: str | None = None):
         self.agent_manager = agent_manager
+        self.storage_dir = Path(storage_dir).expanduser().resolve() if storage_dir else None
         self.sessions: dict[str, OrchestratorSession] = {}
         self._execution_tasks: dict[str, asyncio.Task] = {}
+        self.restore_all()
 
     async def create_session(
         self,
@@ -151,6 +205,7 @@ class Orchestrator:
             ],
         )
         self.sessions[session.id] = session
+        self._persist(session)
         return session
 
     def get_session(self, session_id: str) -> OrchestratorSession | None:
@@ -172,6 +227,7 @@ class Orchestrator:
         )
         self._execution_tasks[session_id] = task
         task.add_done_callback(lambda _: self._execution_tasks.pop(session_id, None))
+        self._persist(session)
         return session
 
     async def cancel(self, session_id: str) -> OrchestratorSession:
@@ -193,6 +249,7 @@ class Orchestrator:
         session.status = "cancelled"
         session.completed_at = datetime.now()
         session.final_result = "Mission cancelled by the user."
+        self._persist(session)
         return session
 
     async def decompose_mission(self, session: OrchestratorSession) -> list[SubTask]:
@@ -243,11 +300,13 @@ class Orchestrator:
 
         try:
             session.status = "decomposing"
+            self._persist(session)
             session.decomposed_tasks = await self.decompose_mission(session)
             if not session.decomposed_tasks:
                 raise RuntimeError("Mission produced no executable tasks")
 
             session.status = "running"
+            self._persist(session)
             if session.execution_mode == "sequential":
                 for index, subtask in enumerate(session.decomposed_tasks):
                     await self._execute_task(session, session.workers[index % len(session.workers)], subtask)
@@ -280,6 +339,7 @@ class Orchestrator:
             session.error = str(exc)
             session.completed_at = datetime.now()
             session.final_result = f"Mission failed: {exc}"
+            self._persist(session)
             return session.final_result
     async def _execute_task(
         self, session: OrchestratorSession, worker: Worker, subtask: SubTask
@@ -291,6 +351,7 @@ class Orchestrator:
         subtask.status = TaskStatus.RUNNING
         subtask.assigned_worker_id = worker.id
         subtask.started_at = datetime.now()
+        self._persist(session)
 
         try:
             worker_session = await self.agent_manager.launch_agent(
@@ -333,6 +394,7 @@ class Orchestrator:
         finally:
             subtask.completed_at = datetime.now()
             worker.current_task_id = None
+            self._persist(session)
 
     async def synthesize_results(self, session_id: str) -> str:
         session = self._require_session(session_id)
@@ -356,6 +418,7 @@ class Orchestrator:
             session.status = "completed"
         session.completed_at = datetime.now()
         session.final_result = "\n\n".join(sections)
+        self._persist(session)
         return session.final_result
 
     @staticmethod
@@ -386,6 +449,47 @@ class Orchestrator:
                 return message.content
         return "Worker agent returned an error."
 
+    def delete(self, session_id: str) -> None:
+        session = self._require_session(session_id)
+        if session.status in {"decomposing", "running"}:
+            raise ValueError("Running missions must be cancelled before deletion")
+        self.sessions.pop(session_id, None)
+        if self.storage_dir:
+            (self.storage_dir / f"{session_id}.json").unlink(missing_ok=True)
+
+    def restore_all(self) -> None:
+        if not self.storage_dir or not self.storage_dir.exists():
+            return
+        for path in self.storage_dir.glob("*.json"):
+            try:
+                session = mission_from_dict(json.loads(path.read_text()))
+                if session.status in {"decomposing", "running"}:
+                    session.status = "failed"
+                    session.error = "Backend stopped before the mission completed"
+                    session.completed_at = datetime.now()
+                    for task in session.decomposed_tasks:
+                        if task.status == TaskStatus.RUNNING:
+                            task.status = TaskStatus.FAILED
+                            task.error = session.error
+                            task.completed_at = session.completed_at
+                    for worker in session.workers:
+                        if worker.status == WorkerStatus.BUSY:
+                            worker.status = WorkerStatus.ERROR
+                            worker.current_task_id = None
+                self.sessions[session.id] = session
+                self._persist(session)
+            except Exception as exc:
+                logger.warning("Skipping corrupt mission file %s: %s", path, exc)
+
+    def _persist(self, session: OrchestratorSession) -> None:
+        if not self.storage_dir:
+            return
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        destination = self.storage_dir / f"{session.id}.json"
+        temporary = destination.with_suffix(".tmp")
+        temporary.write_text(json.dumps(mission_to_dict(session), indent=2))
+        temporary.replace(destination)
+
     def _require_session(self, session_id: str) -> OrchestratorSession:
         session = self.get_session(session_id)
         if not session:
@@ -393,7 +497,9 @@ class Orchestrator:
         return session
 
 
-orchestrator = Orchestrator()
+from backend.config.paths import MISSIONS_DIR
+
+orchestrator = Orchestrator(storage_dir=MISSIONS_DIR)
 
 
 async def create_orchestrator_session(

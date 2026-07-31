@@ -20,6 +20,7 @@ import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -27,6 +28,7 @@ import {
   cancelMission,
   clearMissionError,
   createMission,
+  deleteMission,
   fetchMission,
   fetchMissions,
   Mission,
@@ -360,14 +362,25 @@ const Missions: React.FC = () => {
             </Box>
           </Box>
 
-          <MissionDetail mission={selectedMission} onCancel={(id) => dispatch(cancelMission(id))} />
+          <MissionDetail
+            mission={selectedMission}
+            onCancel={(id) => dispatch(cancelMission(id))}
+            onDelete={async (id) => {
+              const result = await dispatch(deleteMission(id));
+              if (deleteMission.fulfilled.match(result)) setSelectedMissionId(null);
+            }}
+          />
         </Box>
       </Box>
     </Box>
   );
 };
 
-const MissionDetail: React.FC<{ mission?: Mission; onCancel: (missionId: string) => void }> = ({ mission, onCancel }) => {
+const MissionDetail: React.FC<{
+  mission?: Mission;
+  onCancel: (missionId: string) => void;
+  onDelete: (missionId: string) => void;
+}> = ({ mission, onCancel, onDelete }) => {
   const c = useClaudeTokens();
   if (!mission) {
     return (
@@ -393,9 +406,13 @@ const MissionDetail: React.FC<{ mission?: Mission; onCancel: (missionId: string)
             {mission.execution_mode} · {mission.provider}/{mission.model} · {mission.isolate_workers ? 'isolated worktrees · ' : ''}{elapsed(mission.created_at, mission.completed_at)}
           </Typography>
         </Box>
-        {active && (
+        {active ? (
           <Button color="error" size="small" startIcon={<StopCircleOutlinedIcon />} onClick={() => onCancel(mission.id)}>
             Cancel
+          </Button>
+        ) : (
+          <Button color="inherit" size="small" startIcon={<DeleteOutlineIcon />} onClick={() => onDelete(mission.id)}>
+            Delete
           </Button>
         )}
       </Box>

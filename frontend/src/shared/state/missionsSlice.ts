@@ -113,6 +113,13 @@ export const cancelMission = createAsyncThunk('missions/cancel', async (missionI
   missionRequest(`/${encodeURIComponent(missionId)}/cancel`, { method: 'POST' }),
 );
 
+export const deleteMission = createAsyncThunk('missions/delete', async (missionId: string) => {
+  const response = await fetch(`${MISSIONS_API}/${encodeURIComponent(missionId)}`, { method: 'DELETE' });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || 'Failed to delete mission');
+  return missionId;
+});
+
 const missionsSlice = createSlice({
   name: 'missions',
   initialState,
@@ -147,6 +154,14 @@ const missionsSlice = createSlice({
         state.creating = false;
         state.error = action.error.message || 'Failed to create mission';
       });
+
+    builder.addCase(deleteMission.fulfilled, (state, action) => {
+      delete state.items[action.payload];
+      state.error = null;
+    });
+    builder.addCase(deleteMission.rejected, (state, action) => {
+      state.error = action.error.message || 'Failed to delete mission';
+    });
 
     for (const thunk of [fetchMission, startMission, cancelMission]) {
       builder.addCase(thunk.fulfilled, (state, action) => {

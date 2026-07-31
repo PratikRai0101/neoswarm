@@ -102,6 +102,35 @@ async def test_mission_creation_validates_input():
 
 
 @pytest.mark.asyncio
+async def test_missions_persist_and_interrupted_work_is_reconciled(tmp_path):
+    storage = tmp_path / "missions"
+    first = Orchestrator(FakeAgentManager(), storage_dir=str(storage))
+    completed = await first.create_session("Completed mission", num_workers=1)
+    completed.status = "completed"
+    completed.completed_at = completed.created_at
+    first._persist(completed)
+
+    interrupted = await first.create_session("Interrupted mission", num_workers=1)
+    interrupted.status = "running"
+    interrupted.decomposed_tasks = [
+        SubTask(id="running-task", description="Still running", status=TaskStatus.RUNNING)
+    ]
+    first._persist(interrupted)
+
+    restored = Orchestrator(FakeAgentManager(), storage_dir=str(storage))
+
+    assert restored.get_session(completed.id).status == "completed"
+    restored_interrupted = restored.get_session(interrupted.id)
+    assert restored_interrupted.status == "failed"
+    assert restored_interrupted.decomposed_tasks[0].status == TaskStatus.FAILED
+    assert "Backend stopped" in restored_interrupted.error
+
+    restored.delete(completed.id)
+    assert restored.get_session(completed.id) is None
+    assert not (storage / f"{completed.id}.json").exists()
+
+
+@pytest.mark.asyncio
 async def test_mission_routes_create_start_and_report_a_mission(monkeypatch):
     import backend.apps.agents.agents as agents_api
 

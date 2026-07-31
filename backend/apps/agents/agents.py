@@ -279,6 +279,17 @@ async def cancel_mission(mission_id: str):
     return {"mission": mission_to_dict(mission)}
 
 
+@agents.router.delete("/missions/{mission_id}")
+async def delete_mission(mission_id: str):
+    try:
+        orchestrator.delete(mission_id)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 409 if "must be cancelled" in message else 404
+        raise HTTPException(status_code=status_code, detail=message)
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
