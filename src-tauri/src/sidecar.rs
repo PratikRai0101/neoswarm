@@ -44,14 +44,7 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
         }
     }
     
-    // 3. Development path (absolute path for development)
-    let dev_path = PathBuf::from("/home/raijinnn0101/Development/NeoSwarm/backend");
-    if dev_path.exists() {
-        info!("Found development backend: {:?}", dev_path);
-        possible_paths.push(dev_path);
-    }
-    
-    // 4. Current working directory
+    // 3. Current working directory
     if let Ok(cwd) = std::env::current_dir() {
         let cwd_backend = cwd.join("backend");
         if cwd_backend.exists() {
@@ -68,15 +61,8 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
     let backend_dir = match backend_dir {
         Some(d) => d,
         None => {
-            // Last fallback: try release build directory if it exists
-            let release_backend = PathBuf::from("/home/raijinnn0101/Development/NeoSwarm/src-tauri/target/release/backend");
-            if release_backend.exists() {
-                info!("Found backend in release folder: {:?}", release_backend);
-                release_backend
-            } else {
-                error!("No backend found in any location");
-                return Ok(());
-            }
+            error!("No backend found in bundled resources, beside the executable, or in the working directory");
+            return Ok(());
         }
     };
 
@@ -95,10 +81,19 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
     
     info!("Starting backend with python: {}", python_cmd);
 
+    // Release builds run from bundled resources, so keep mutable state out of
+    // the app bundle. Development builds retain the repository-local data dir.
+    let packaged_env = if cfg!(debug_assertions) {
+        ""
+    } else {
+        "NEOSWARM_PACKAGED=1 "
+    };
+
     // Build the startup command
     let startup_cmd = format!(
-        "cd '{}' && PYTHONPATH='{}' '{}' -m uvicorn backend.main:app --host 127.0.0.1 --port 8324",
+        "cd '{}' && {}PYTHONPATH='{}' '{}' -m uvicorn backend.main:app --host 127.0.0.1 --port 8324",
         backend_dir.display(),
+        packaged_env,
         parent,
         python_cmd
     );

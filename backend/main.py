@@ -41,10 +41,14 @@ main_app = MainApp(
 )
 app = main_app.app
 
+_cors_origins = os.environ.get(
+    "NEOSWARM_CORS_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[origin.strip() for origin in _cors_origins.split(",") if origin.strip()],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
