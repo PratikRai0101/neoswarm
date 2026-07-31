@@ -8,6 +8,7 @@ yarn.lock
 # Build outputs
 dist/
 build/
+*.tsbuildinfo
 *.tgz
 *.tar.gz
 
