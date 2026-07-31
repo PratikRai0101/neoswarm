@@ -65,8 +65,8 @@ class AppSettings(BaseModel):
     user_email: Optional[str] = None
     user_use_case: Optional[str] = None
     user_referral_source: Optional[str] = None
-    # Analytics: opted in by default, user can toggle off
-    analytics_opt_in: bool = True
+    # Anonymous product analytics are disabled until the user explicitly opts in.
+    analytics_opt_in: bool = False
     installation_id: Optional[str] = None
     first_opened_at: Optional[str] = None  # ISO timestamp of first app open
 

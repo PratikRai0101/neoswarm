@@ -108,7 +108,7 @@ const OnboardingModal: React.FC = () => {
         if (dashboard?.id) {
           const seedRes = await fetch(`${API_BASE}/dashboards/${dashboard.id}/seed-demo`, { method: 'POST' });
           if (seedRes.ok) {
-            trackEvent('onboarding.completed', { dashboard_id: dashboard.id });
+            trackEvent('onboarding.completed');
             localStorage.setItem('neoswarm_walkthrough_pending', 'true');
             setOpen(false);
             // Force full page load to ensure dashboard mounts fresh with walkthrough
@@ -150,15 +150,7 @@ const OnboardingModal: React.FC = () => {
         }),
       });
     } catch {}
-    trackEvent('onboarding.profile_submitted', {
-      has_name: !!userName.trim(),
-      has_email: !!userEmail.trim(),
-      use_cases: useCases,
-      use_cases_count: useCases.length,
-      use_case_other: useCases.includes('Other') ? useCaseOther.trim() : '',
-      referral_source: referralSource,
-      referral_source_other: referralSource === 'Other' ? referralSourceOther.trim() : '',
-    });
+    trackEvent('onboarding.profile_submitted');
     setStep('connect');
     trackEvent('onboarding.connect_started');
   };

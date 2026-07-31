@@ -225,8 +225,8 @@ const ThemedApp: React.FC = () => {
     };
     const handleError = (event: ErrorEvent) => {
       trackEvent('app.error', {
-        error_message: event.message,
-        error_stack: event.error?.stack?.slice(0, 500),
+        error_type: event.error?.name || 'Error',
+        has_stack: !!event.error?.stack,
         last_page: getLastPage(),
       });
     };

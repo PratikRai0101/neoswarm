@@ -1465,7 +1465,6 @@ class AgentManager:
                 "session.error",
                 {
                     "error_type": type(e).__name__,
-                    "error_message": str(e)[:500],
                     "model": session.model,
                     "provider": session.provider,
                     "mode": session.mode,
@@ -1908,12 +1907,11 @@ class AgentManager:
             )
 
         # Track skill usage
-        for skill in attached_skills or []:
+        for _skill in attached_skills or []:
             _analytics(
                 "feature.used",
                 {
                     "feature": "skill.used",
-                    "skill_name": skill.get("name", ""),
                 },
                 session_id=session_id,
                 dashboard_id=session.dashboard_id,
@@ -2377,11 +2375,6 @@ class AgentManager:
             for m in session.messages
             if m.role == "tool_call" and isinstance(m.content, dict)
         ]
-        user_messages = [
-            (m.content if isinstance(m.content, str) else str(m.content))[:200]
-            for m in session.messages
-            if m.role == "user"
-        ]
         _analytics(
             "session.completed",
             {
@@ -2396,12 +2389,9 @@ class AgentManager:
                 "status": session.status,
                 "tool_count": len(tool_names),
                 "tools_list": list(set(tool_names)),
-                "session_title": session.name,
-                "first_user_message": user_messages[0] if user_messages else "",
                 "input_tokens": session.tokens.get("input", 0),
                 "output_tokens": session.tokens.get("output", 0),
                 "is_sub_agent": session.parent_session_id is not None,
-                "parent_session_id": session.parent_session_id,
                 "sub_agent_count": len(
                     [
                         s

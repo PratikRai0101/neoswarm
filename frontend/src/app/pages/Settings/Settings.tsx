@@ -910,6 +910,25 @@ const Settings: React.FC = () => {
           </Box>
         </Box>
 
+        {/* ── Privacy ── */}
+        <Typography sx={{ ...sectionSx, mt: 3 }}>Privacy</Typography>
+
+        <Box sx={inlineRowLastSx}>
+          <Box sx={{ mr: 3 }}>
+            <Typography sx={labelSx}>Anonymous product analytics</Typography>
+            <Typography sx={descSx}>Share operational usage metrics to help improve NeoSwarm. Prompts, responses, profile details, file contents, and error messages are never included.</Typography>
+          </Box>
+          <Switch
+            checked={form.analytics_opt_in ?? false}
+            onChange={(e) => setForm({ ...form, analytics_opt_in: e.target.checked })}
+            inputProps={{ 'aria-label': 'Anonymous product analytics' }}
+            sx={{
+              '& .MuiSwitch-switchBase.Mui-checked': { color: c.accent.primary },
+              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: c.accent.primary },
+            }}
+          />
+        </Box>
+
         {/* ── Advanced ── */}
         <Typography sx={{ ...sectionSx, mt: 3 }}>Advanced</Typography>
 

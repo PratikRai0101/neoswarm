@@ -48,6 +48,7 @@ export interface AppSettings {
   auto_select_mode_on_new_agent: boolean;
   expand_new_chats_in_dashboard: boolean;
   auto_reveal_sub_agents: boolean;
+  analytics_opt_in: boolean;
   dev_mode: boolean;
 }
 
@@ -82,6 +83,7 @@ const initialState: SettingsState = {
     auto_select_mode_on_new_agent: false,
     expand_new_chats_in_dashboard: false,
     auto_reveal_sub_agents: true,
+    analytics_opt_in: false,
     dev_mode: false,
   },
   loading: false,

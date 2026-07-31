@@ -21,6 +21,21 @@ POSTHOG_HOST = "https://us.i.posthog.com"
 _posthog: Posthog | None = None
 _installation_id: str | None = None
 
+# Defense in depth: analytics call sites should only submit operational
+# metadata, but these fields are always discarded before leaving the device.
+_SENSITIVE_PROPERTY_KEYS = {
+    "email",
+    "error_message",
+    "error_stack",
+    "first_user_message",
+    "name",
+    "referral_source_other",
+    "session_title",
+    "use_case_other",
+    "user_email",
+    "user_name",
+}
+
 
 def init():
     """Initialise PostHog. Called once at app startup."""
@@ -69,7 +84,8 @@ def _is_opted_in() -> bool:
         from backend.apps.settings.settings import load_settings
         return getattr(load_settings(), "analytics_opt_in", True)
     except Exception:
-        return True
+        # Privacy settings must fail closed if the settings store is unavailable.
+        return False
 
 
 def record(
@@ -82,7 +98,11 @@ def record(
     if not _posthog or not _is_opted_in():
         return
 
-    props = {**(properties or {})}
+    props = {
+        key: value
+        for key, value in (properties or {}).items()
+        if key not in _SENSITIVE_PROPERTY_KEYS
+    }
     if session_id:
         props["session_id"] = session_id
     if dashboard_id:
@@ -111,7 +131,11 @@ def identify(extra_properties: dict | None = None):
             properties={
                 "os": platform.system(),
                 "platform": platform.platform(),
-                **(extra_properties or {}),
+                **{
+                    key: value
+                    for key, value in (extra_properties or {}).items()
+                    if key not in _SENSITIVE_PROPERTY_KEYS
+                },
             },
         )
     except Exception as e:

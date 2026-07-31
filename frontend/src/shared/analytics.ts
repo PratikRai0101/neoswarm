@@ -4,9 +4,16 @@ let _lastAction = '';
 let _lastPage = '';
 let _appStartTime = Date.now();
 
+function currentRouteLabel(): string {
+  const location = window.location.hash || window.location.pathname;
+  return location
+    .replace(/(\/dashboard\/)[^/?#]+/, '$1:id')
+    .replace(/(\/apps\/)[^/?#]+/, '$1:id');
+}
+
 export function trackEvent(eventType: string, properties?: Record<string, any>, useBeacon = false) {
   _lastAction = eventType;
-  _lastPage = window.location.hash || window.location.pathname;
+  _lastPage = currentRouteLabel();
 
   const body = JSON.stringify({ event_type: eventType, properties });
   if (useBeacon && navigator.sendBeacon) {

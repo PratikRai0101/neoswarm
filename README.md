@@ -15,10 +15,10 @@ Textual terminal UI. It can run with local Ollama models or direct Anthropic,
 OpenAI, and Google Gemini API keys. Agents keep session data locally and can use built-in tools or
 configured MCP tools.
 
-> **Privacy:** model requests go to whichever provider you configure. Product
-> analytics are enabled by default but can be disabled in Settings; disabling
-> them prevents PostHog event capture. API keys remain local and are redacted
-> from settings responses.
+> **Privacy:** model requests go to whichever provider you configure. Anonymous
+> product analytics are off by default and require explicit opt-in in Settings;
+> prompts, responses, profile details, file contents, and error messages are not
+> included. API keys remain local and are redacted from settings responses.
 
 ## Implemented capabilities
 

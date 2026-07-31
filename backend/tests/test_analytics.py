@@ -221,7 +221,8 @@ class TestSessionCompleted:
         assert e["properties"]["message_count"] == 2
         assert e["properties"]["input_tokens"] == 1000
         assert e["properties"]["output_tokens"] == 500
-        assert e["properties"]["session_title"] == "Test Session"
+        assert "session_title" not in e["properties"]
+        assert "first_user_message" not in e["properties"]
         assert e["properties"]["branch_count"] == 1  # main branch
         assert e["properties"]["is_sub_agent"] is False
 
@@ -268,7 +269,7 @@ class TestSessionCompleted:
 
         e = last_event("session.completed")
         assert e["properties"]["cost_usd"] == 0.10
-        assert e["properties"]["session_title"] == "Shutdown Test"
+        assert "session_title" not in e["properties"]
 
 
 # ===========================================================================
@@ -292,7 +293,7 @@ class TestSessionError:
 
         e = last_event("session.error")
         assert e["properties"]["error_type"] == "ValueError"
-        assert e["properties"]["error_message"] == "test error"
+        assert "error_message" not in e["properties"]
         assert e["properties"]["model"] == "sonnet"
 
 
@@ -909,7 +910,7 @@ class TestFullLifecycle:
         assert e["properties"]["input_tokens"] == 20000
         assert e["properties"]["output_tokens"] == 5000
         assert e["properties"]["dashboard_id"] == "dash-001"
-        assert e["properties"]["first_user_message"] == "Hello, help me code"
+        assert "first_user_message" not in e["properties"]
         assert e["properties"]["duration_seconds"] >= 0  # may be 0 in fast tests
 
     @pytest.mark.asyncio
@@ -1108,7 +1109,7 @@ class TestEdgeCases:
         e = last_event("session.completed")
         assert e["properties"]["message_count"] == 0
         assert e["properties"]["tool_count"] == 0
-        assert e["properties"]["first_user_message"] == ""
+        assert "first_user_message" not in e["properties"]
 
     @pytest.mark.asyncio
     async def test_close_session_with_zero_cost(self, manager):
@@ -1141,6 +1142,35 @@ class TestEdgeCases:
         record("test.event", None)
         e = last_event("test.event")
         assert "os" in e["properties"]  # system props still added
+
+    def test_sensitive_properties_are_discarded(self):
+        record(
+            "test.event",
+            {
+                "model": "sonnet",
+                "email": "person@example.com",
+                "error_message": "secret path and prompt",
+                "first_user_message": "private prompt",
+                "session_title": "private title",
+            },
+        )
+
+        properties = last_event("test.event")["properties"]
+        assert properties["model"] == "sonnet"
+        assert "email" not in properties
+        assert "error_message" not in properties
+        assert "first_user_message" not in properties
+        assert "session_title" not in properties
+
+    def test_analytics_preference_fails_closed(self, monkeypatch):
+        import backend.apps.analytics.collector as collector
+        import backend.apps.settings.settings as settings_mod
+
+        monkeypatch.setattr(
+            settings_mod, "load_settings", MagicMock(side_effect=OSError("unavailable"))
+        )
+
+        assert collector._is_opted_in() is False
 
     def test_opted_out_installation_does_not_send_events(self, monkeypatch):
         """The privacy preference must stop all outbound event capture."""

@@ -20,43 +20,12 @@ from backend.apps.analytics.collector import (
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "1.0.22"
+APP_VERSION = "0.1.0"
 
 _heartbeat_task: asyncio.Task | None = None
 
-# Delta tracking — tracks last-seen totals to compute increments
-_last_cost: float | None = None
-_last_prompt_tokens: int | None = None
-_last_completion_tokens: int | None = None
-_last_requests: int | None = None
-_RESTART_THRESHOLD = 1.0
-
-
-def _compute_delta(
-    current: float, last: float | None, threshold: float = _RESTART_THRESHOLD
-) -> tuple[float, float]:
-    """Compute incremental delta from cumulative values.
-
-    Returns (delta, new_last).
-    Handles restarts (large drops) and float jitter (tiny drops).
-    """
-    if last is None:
-        return 0.0, current
-    if current < last - threshold:
-        return current, current
-    if current < last:
-        return 0.0, last
-    return current - last, current
-
-
 async def _heartbeat_loop():
-    """Send a heartbeat event every 60 seconds with cost/token deltas."""
-    global \
-        _last_9r_cost, \
-        _last_9r_prompt_tokens, \
-        _last_9r_completion_tokens, \
-        _last_9r_requests
-
+    """Send a heartbeat event every 60 seconds."""
     while True:
         await asyncio.sleep(60)
         try:
@@ -127,14 +96,6 @@ async def analytics_lifespan():
             "provider_count": len(providers),
             "app_version": APP_VERSION,
         }
-        if getattr(settings, "user_email", None):
-            id_props["email"] = settings.user_email
-        if getattr(settings, "user_name", None):
-            id_props["name"] = settings.user_name
-        if getattr(settings, "user_use_case", None):
-            id_props["use_case"] = settings.user_use_case
-        if getattr(settings, "user_referral_source", None):
-            id_props["referral_source"] = settings.user_referral_source
         identify(id_props)
     except Exception as e:
         logger.debug(f"Analytics startup event failed (non-critical): {e}")

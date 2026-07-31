@@ -442,10 +442,9 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
   useEffect(() => {
     if (!dashboardId) return;
     const startTime = Date.now();
-    trackEvent('dashboard.opened', { dashboard_id: dashboardId });
+    trackEvent('dashboard.opened');
     return () => {
       trackEvent('dashboard.closed', {
-        dashboard_id: dashboardId,
         time_spent_seconds: Math.round((Date.now() - startTime) / 1000),
       });
     };
@@ -1064,7 +1063,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       }
 
       // Expand + navigate to target + bring to front
-      trackEvent('dashboard.arrow_navigated', { direction, from_card: currentFocused, to_card: target.id });
+      trackEvent('dashboard.arrow_navigated', { direction });
       if (target.type === 'agent') {
         dispatch(expandSession(target.id));
       }

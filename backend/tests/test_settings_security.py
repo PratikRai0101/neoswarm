@@ -79,3 +79,7 @@ def test_settings_file_is_owner_only(isolated_settings_file):
     mode = stat.S_IMODE(isolated_settings_file.stat().st_mode)
 
     assert mode == 0o600
+
+
+def test_new_installations_default_to_analytics_opt_out():
+    assert AppSettings().analytics_opt_in is False
