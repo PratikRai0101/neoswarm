@@ -132,15 +132,9 @@ const AppShell: React.FC = () => {
     };
   }, []);
 
-  // Derive "any model connected" from the /agents/models response (already
-  // fetched into Redux at app start via Main.tsx and re-fetched by
-  // Settings.tsx after every subscription connect/disconnect). That endpoint
-  // intersects BUILTIN_MODELS with both the user's API keys AND 9Router's
-  // live connection state, so a non-empty byProvider means there's at least
-  // one usable model — regardless of whether it came from a typed API key
-  // or an OAuth subscription flow. This replaces the previous approach of
-  // polling /agents/subscriptions/status in an effect keyed to anthropicKey,
-  // which didn't refresh when a non-Anthropic subscription was connected.
+  // Derive "any model connected" from the /agents/models response. The model
+  // registry includes configured cloud providers and locally discovered Ollama
+  // models, so a non-empty byProvider means at least one model is executable.
   const modelsByProvider = useAppSelector((s) => s.models.byProvider);
   const modelsLoaded = useAppSelector((s) => s.models.loaded);
   const hasModelConnected = Object.keys(modelsByProvider).length > 0;

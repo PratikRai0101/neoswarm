@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Box, Typography, Modal, Button, CircularProgress, TextField, InputAdornment } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Box, Typography, Modal, Button, TextField, InputAdornment } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { useAppSelector } from '@/shared/hooks';
+import { useAppDispatch } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { API_BASE } from '@/shared/config';
 import { trackEvent } from '@/shared/analytics';
+import { openSettingsModal } from '@/shared/state/settingsSlice';
 
 // Email validation: format check + typo correction for common domains.
 // Real ownership verification is intentionally pushed downstream (mailing list /
@@ -44,13 +45,6 @@ function isValidEmail(email: string): boolean {
   return EMAIL_REGEX.test(email.trim());
 }
 
-const SUBSCRIPTION_PROVIDERS = [
-  { id: 'claude', name: 'Claude', desc: 'Sonnet, Opus, Haiku', color: '#E8927A', preview: false },
-  { id: 'gemini-cli', name: 'Gemini', desc: 'Gemini 2.5 Pro & Flash', color: '#4285F4', preview: true },
-  { id: 'codex', name: 'ChatGPT', desc: 'GPT-5.4, o3, o4-mini', color: '#74AA9C', preview: true },
-  { id: 'github', name: 'GitHub Copilot', desc: 'Claude + GPT models', color: '#8B949E', preview: true },
-];
-
 const USE_CASES = [
   'Software Development',
   'Research & Analysis',
@@ -82,7 +76,7 @@ const REFERRAL_SOURCES = [
 
 const OnboardingModal: React.FC = () => {
   const c = useClaudeTokens();
-  const settings = useAppSelector((s) => s.settings);
+  const dispatch = useAppDispatch();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<'profile' | 'connect'>('profile');
   const [userName, setUserName] = useState('');
@@ -92,69 +86,15 @@ const OnboardingModal: React.FC = () => {
   const [useCaseOther, setUseCaseOther] = useState<string>('');
   const [referralSource, setReferralSource] = useState<string>('');
   const [referralSourceOther, setReferralSourceOther] = useState<string>('');
-  const [connecting, setConnecting] = useState<string | null>(null);
-  const [nineRouterReady, setNineRouterReady] = useState<boolean | null>(null);
-  const pollTimerRef = useRef<any>(null);
-  const msgHandlerRef = useRef<any>(null);
 
-  // Poll for 9Router readiness (it may still be starting when onboarding shows)
   useEffect(() => {
-    let attempts = 0;
-    const maxAttempts = 15; // 30 seconds
-    const check = () => {
-      const alreadySeen = localStorage.getItem('neoswarm_onboarding_seen');
-      fetch(`${API_BASE}/agents/subscriptions/status`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.running) {
-            // Skip onboarding only if already seen AND has active subscription
-            const connections = data.providers?.connections || [];
-            if (alreadySeen === 'true' && connections.some((p: any) => p.isActive)) {
-              return;
-            }
-            // Delay before marking ready — 9Router's OAuth needs time to warm up
-            setTimeout(() => setNineRouterReady(true), 3000);
-          } else {
-            attempts++;
-            if (attempts < maxAttempts) {
-              setTimeout(check, 2000);
-            } else {
-              setNineRouterReady(false);
-            }
-          }
-        })
-        .catch(() => {
-          attempts++;
-          if (attempts < maxAttempts) setTimeout(check, 2000);
-          else setNineRouterReady(false); // Still show onboarding even if 9Router isn't available
-        });
-    };
-    check();
-  }, []);
-
-  // Show once: if not previously dismissed
-  useEffect(() => {
-    const alreadySeen = localStorage.getItem('neoswarm_onboarding_seen');
-    if (alreadySeen === 'true') return;
-    if (nineRouterReady === null) return; // still checking
-
+    if (localStorage.getItem('neoswarm_onboarding_seen') === 'true') return;
     setOpen(true);
     trackEvent('onboarding.started', { step: 'profile' });
-  }, [nineRouterReady]);
-
-  // Cleanup timers on unmount
-  useEffect(() => {
-    return () => {
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-      if (msgHandlerRef.current) window.removeEventListener('message', msgHandlerRef.current);
-    };
   }, []);
 
   const dismiss = async () => {
     localStorage.setItem('neoswarm_onboarding_seen', 'true');
-    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-    if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
-    setConnecting(null);
 
     // Create a demo dashboard with a pre-populated example agent
     try {
@@ -220,7 +160,7 @@ const OnboardingModal: React.FC = () => {
       referral_source_other: referralSource === 'Other' ? referralSourceOther.trim() : '',
     });
     setStep('connect');
-    trackEvent('onboarding.connect_started', { nine_router_ready: nineRouterReady });
+    trackEvent('onboarding.connect_started');
   };
 
   // Whether all required profile fields are filled in.
@@ -254,124 +194,25 @@ const OnboardingModal: React.FC = () => {
     trackEvent('onboarding.email_suggestion_applied');
   };
 
-  // Same connect logic as Settings/SubscriptionCards
-  const handleConnect = async (providerId: string) => {
-    // Cancel any previous attempt
-    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-    if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
-    setConnecting(providerId);
-    trackEvent('onboarding.provider_selected', { provider: providerId });
-
-    // Delay before calling connect — avoids Claude OAuth rate limit on retries
-    await new Promise(r => setTimeout(r, 1000));
-
-    try {
-      const r = await fetch(`${API_BASE}/agents/subscriptions/connect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: providerId }),
-      });
-      if (!r.ok) {
-        setConnecting(null);
-        return;
-      }
-      const data = await r.json();
-
-      if (data.flow === 'device_code') {
-        if (data.verification_uri) window.open(data.verification_uri, '_blank');
-
-        const timer = setInterval(async () => {
-          try {
-            const pr = await fetch(`${API_BASE}/agents/subscriptions/poll`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                provider: providerId,
-                device_code: data.device_code,
-                code_verifier: data.code_verifier,
-                extra_data: data.extra_data,
-              }),
-            });
-            const pd = await pr.json();
-            if (pd.success) {
-              clearInterval(timer);
-              pollTimerRef.current = null;
-              trackEvent('onboarding.provider_connected', { provider: providerId });
-              dismiss();
-            }
-          } catch {}
-        }, 5000);
-        pollTimerRef.current = timer;
-        setTimeout(() => { clearInterval(timer); pollTimerRef.current = null; setConnecting(null); }, 30000);
-
-      } else if (data.flow === 'authorization_code') {
-        const popup = window.open(data.auth_url, 'oauth_connect', 'width=600,height=700');
-
-        // Poll status as primary detection (works in Electron where postMessage may not)
-        const statusPoller = setInterval(async () => {
-          try {
-            const sr = await fetch(`${API_BASE}/agents/subscriptions/status`);
-            const sd = await sr.json();
-            const connections = sd.providers?.connections || [];
-            if (connections.some((p: any) => p.provider === providerId && p.isActive)) {
-              clearInterval(statusPoller);
-              pollTimerRef.current = null;
-              if (msgHandlerRef.current) {
-                window.removeEventListener('message', msgHandlerRef.current);
-                msgHandlerRef.current = null;
-              }
-              trackEvent('onboarding.provider_connected', { provider: providerId });
-              dismiss();
-            }
-          } catch {}
-        }, 2000);
-        pollTimerRef.current = statusPoller;
-
-        // Also listen for postMessage from callback page (faster when it works)
-        const msgHandler = async (event: MessageEvent) => {
-          const d = event.data;
-          const callbackData = d?.type === 'oauth_callback' ? d.data : d;
-          if (callbackData?.code) {
-            window.removeEventListener('message', msgHandler);
-            msgHandlerRef.current = null;
-            if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-            if (popup && !popup.closed) popup.close();
-            try {
-              await fetch(`${API_BASE}/agents/subscriptions/exchange`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  provider: providerId,
-                  code: callbackData.code,
-                  redirect_uri: data.redirect_uri,
-                  code_verifier: data.code_verifier,
-                  state: callbackData.state || data.state,
-                }),
-              });
-            } catch {}
-            trackEvent('onboarding.provider_connected', { provider: providerId });
-            dismiss();
-          }
-        };
-        window.addEventListener('message', msgHandler);
-        msgHandlerRef.current = msgHandler;
-
-        setTimeout(() => {
-          if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-          if (msgHandlerRef.current) { window.removeEventListener('message', msgHandlerRef.current); msgHandlerRef.current = null; }
-          setConnecting(null);
-        }, 30000);
-
-      } else {
-        setConnecting(null);
-      }
-    } catch {
-      setConnecting(null);
-    }
+  const handleUseOllama = () => {
+    trackEvent('onboarding.provider_selected', { provider: 'ollama' });
+    dismiss();
   };
 
-  const handleApiKey = () => { trackEvent('onboarding.api_key_chosen'); dismiss(); };
-  const handleSkip = () => { trackEvent(step === 'profile' ? 'onboarding.profile_skipped' : 'onboarding.connect_skipped'); dismiss(); };
+  const handleApiKey = () => {
+    trackEvent('onboarding.api_key_chosen');
+    localStorage.setItem('neoswarm_onboarding_seen', 'true');
+    setOpen(false);
+    dispatch(openSettingsModal('models'));
+  };
+  const handleProfileSkip = () => {
+    trackEvent('onboarding.profile_skipped');
+    setStep('connect');
+  };
+  const handleSkip = () => {
+    trackEvent('onboarding.connect_skipped');
+    dismiss();
+  };
 
   if (!open) return null;
 
@@ -389,7 +230,7 @@ const OnboardingModal: React.FC = () => {
         {step === 'profile' ? (
           <>
             <Typography sx={{ fontSize: '0.78rem', color: c.text.muted, mb: 2.5, textAlign: 'center' }}>
-              Tell us a bit about yourself
+              Tell us a bit about yourself (optional)
             </Typography>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2.5 }}>
@@ -581,6 +422,13 @@ const OnboardingModal: React.FC = () => {
             >
               Continue
             </Button>
+            <Button
+              onClick={handleProfileSkip}
+              fullWidth
+              sx={{ textTransform: 'none', fontSize: '0.72rem', color: c.text.ghost, '&:hover': { bgcolor: 'transparent', color: c.text.muted } }}
+            >
+              Skip profile
+            </Button>
           </>
         ) : (
           <>
@@ -588,38 +436,27 @@ const OnboardingModal: React.FC = () => {
               Connect an AI model to get started
             </Typography>
 
-            {/* Subscription options */}
             <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1 }}>
-              Use your existing subscription
+              Run locally
             </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mb: 2.5 }}>
-              {SUBSCRIPTION_PROVIDERS.map((p) => (
-                <Box
-                  key={p.id}
-                  onClick={() => !p.preview && !connecting && nineRouterReady && handleConnect(p.id)}
-                  sx={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`,
-                    cursor: p.preview || !nineRouterReady ? 'default' : connecting ? 'wait' : 'pointer',
-                    opacity: p.preview ? 0.5 : !nineRouterReady ? 0.6 : 1,
-                    transition: 'border-color 0.15s, background 0.15s',
-                    ...(!p.preview && nineRouterReady && { '&:hover': { borderColor: c.border.medium, bgcolor: `${c.accent.primary}05` } }),
-                  }}
-                >
-                  <Box>
-                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: c.text.primary }}>{p.name}</Typography>
-                    <Typography sx={{ fontSize: '0.65rem', color: c.text.muted }}>{p.desc}</Typography>
-                  </Box>
-                  <Typography sx={{ fontSize: '0.68rem', color: p.preview ? c.text.ghost : connecting === p.id ? c.accent.primary : !nineRouterReady ? c.text.ghost : c.text.tertiary, fontStyle: p.preview ? 'italic' : 'normal' }}>
-                    {p.preview ? 'Coming soon' : connecting === p.id ? 'Connecting...' : !nineRouterReady && nineRouterReady !== false ? 'Starting...' : 'Connect \u2192'}
-                  </Typography>
-                </Box>
-              ))}
+            <Box
+              onClick={handleUseOllama}
+              sx={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                p: 1.5, mb: 2.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`,
+                cursor: 'pointer',
+                '&:hover': { borderColor: c.border.medium, bgcolor: `${c.accent.primary}05` },
+              }}
+            >
+              <Box>
+                <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: c.text.primary }}>Ollama</Typography>
+                <Typography sx={{ fontSize: '0.65rem', color: c.text.muted }}>Private, local models with no API key</Typography>
+              </Box>
+              <Typography sx={{ fontSize: '0.68rem', color: c.text.tertiary }}>Use local →</Typography>
             </Box>
 
-            {/* API key option */}
             <Typography sx={{ fontSize: '0.65rem', fontWeight: 600, color: c.text.tertiary, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1 }}>
-              Or use an API key
+              Or connect a cloud API
             </Typography>
             <Box
               onClick={handleApiKey}
