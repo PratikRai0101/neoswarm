@@ -1,9 +1,11 @@
 """Centralised path definitions for the NeoSwarm backend.
 
 In dev mode (default) data lives under ``backend/data/``.
-When packaged as a desktop app, Tauri sets ``NEOSWARM_PACKAGED=1`` and
-data is stored in a platform-appropriate location
-(``~/Library/Application Support/NeoSwarm/data/`` on macOS).
+``NEOSWARM_DATA_DIR`` overrides every default, which makes data placement
+explicit for tests, automation, and advanced users. When packaged as a desktop
+app, Tauri sets ``NEOSWARM_PACKAGED=1`` and data is stored in a
+platform-appropriate location (``~/Library/Application Support/NeoSwarm/data/``
+on macOS).
 """
 
 import os
@@ -11,9 +13,12 @@ import sys
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+_data_dir_override = os.environ.get("NEOSWARM_DATA_DIR")
 _is_packaged = os.environ.get("NEOSWARM_PACKAGED") == "1"
 
-if _is_packaged:
+if _data_dir_override:
+    DATA_ROOT = os.path.abspath(os.path.expanduser(_data_dir_override))
+elif _is_packaged:
     if sys.platform == "darwin":
         _app_support = os.path.join(
             os.path.expanduser("~"), "Library", "Application Support", "NeoSwarm"
