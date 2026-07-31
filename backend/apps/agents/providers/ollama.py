@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any, AsyncIterator
+from uuid import uuid4
 
 from backend.apps.agents.providers.base import (
     BaseProvider,
@@ -32,12 +33,13 @@ class OllamaProvider(BaseProvider):
         self,
         base_url: str = OLLAMA_BASE_URL,
         timeout: float = 120.0,
+        transport=None,
     ):
         import httpx
 
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.client = httpx.AsyncClient(timeout=timeout)
+        self.client = httpx.AsyncClient(timeout=timeout, transport=transport)
 
     async def close(self):
         await self.client.aclose()
@@ -58,6 +60,54 @@ class OllamaProvider(BaseProvider):
 
     def get_model_id(self, short_name: str) -> str:
         return short_name
+
+    def format_tool_result(self, tool_use_id: str, content: list[dict]) -> dict:
+        text = "\n".join(
+            str(block.get("text", ""))
+            if block.get("type") == "text"
+            else json.dumps(block)
+            for block in content
+        )
+        return {
+            "role": "tool",
+            "content": text or "Done.",
+            "tool_call_id": tool_use_id,
+        }
+
+    def format_user_message(self, content: Any) -> ProviderMessage:
+        return ProviderMessage(role="user", content=content)
+
+    def format_assistant_message(self, response: ModelResponse) -> ProviderMessage:
+        text = "\n".join(block.text for block in response.content if block.type == "text")
+        tool_calls = []
+        for block in response.content:
+            if block.type == "tool_use" and block.tool_call:
+                tool_calls.append(
+                    {
+                        "id": block.tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": block.tool_call.name,
+                            "arguments": block.tool_call.input,
+                        },
+                    }
+                )
+        message: dict[str, Any] = {"role": "assistant", "content": text}
+        if tool_calls:
+            message["tool_calls"] = tool_calls
+        return ProviderMessage(role="assistant", content=message)
+
+    @staticmethod
+    def _tool_arguments(value: Any) -> dict:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+        return {}
 
     def _format_tools(self, tools: list[ToolSchema]) -> list[dict]:
         """Convert tools to Ollama format."""
@@ -88,6 +138,22 @@ class OllamaProvider(BaseProvider):
             return {"role": msg.role, "content": "\n".join(text_parts)}
         return {"role": msg.role, "content": str(content)}
 
+    def _build_messages(
+        self, system: str | None, messages: list[ProviderMessage]
+    ) -> list[dict]:
+        result: list[dict] = []
+        if system:
+            result.append({"role": "system", "content": system})
+        for message in messages:
+            if message.role == "assistant" and isinstance(message.content, dict):
+                result.append(message.content)
+            elif message.role == "tool_result":
+                values = message.content if isinstance(message.content, list) else [message.content]
+                result.extend(value for value in values if isinstance(value, dict))
+            else:
+                result.append(self._format_message(message))
+        return result
+
     async def stream_message(
         self,
         model: str,
@@ -98,21 +164,18 @@ class OllamaProvider(BaseProvider):
     ) -> AsyncIterator[StreamEvent]:
         import httpx
 
-        ollama_messages = []
-        if system:
-            ollama_messages.append({"role": "system", "content": system})
-        for msg in messages:
-            ollama_messages.append(self._format_message(msg))
-
         payload: dict[str, Any] = {
             "model": model,
-            "messages": ollama_messages,
+            "messages": self._build_messages(system, messages),
             "stream": True,
             "options": {"num_predict": max_tokens},
         }
         if tools:
             payload["tools"] = self._format_tools(tools)
 
+        text_started = False
+        text_index = 0
+        next_index = 1
         try:
             async with self.client.stream(
                 "POST", f"{self.base_url}/api/chat", json=payload, timeout=None
@@ -123,39 +186,59 @@ class OllamaProvider(BaseProvider):
                         continue
                     data = json.loads(line)
                     msg = data.get("message", {})
-                    role = msg.get("role", "")
                     content = msg.get("content", "")
                     tool_calls = msg.get("tool_calls", [])
 
                     if content:
-                        yield StreamEvent(
-                            type="content_block_start",
-                            index=0,
-                            block_type="text",
-                        )
+                        if not text_started:
+                            text_started = True
+                            yield StreamEvent(
+                                type="content_block_start",
+                                index=text_index,
+                                block_type="text",
+                            )
                         yield StreamEvent(
                             type="content_block_delta",
-                            index=0,
+                            index=text_index,
                             delta_type="text_delta",
                             text=content,
                         )
 
-                    for tc in tool_calls:
+                    if tool_calls and text_started:
+                        yield StreamEvent(type="content_block_stop", index=text_index)
+                        text_started = False
+                    for tool_call in tool_calls:
+                        function = tool_call.get("function", {})
+                        block_index = next_index
+                        next_index += 1
+                        tool_id = tool_call.get("id") or uuid4().hex
+                        arguments = self._tool_arguments(function.get("arguments", {}))
                         yield StreamEvent(
                             type="content_block_start",
-                            index=0,
+                            index=block_index,
                             block_type="tool_use",
+                            tool_name=function.get("name", ""),
+                            tool_id=tool_id,
                         )
                         yield StreamEvent(
                             type="content_block_delta",
-                            index=0,
+                            index=block_index,
                             delta_type="input_json_delta",
-                            text=json.dumps(tc),
-                            tool_name=tc.get("function", {}).get("name", ""),
-                            tool_id=tc.get("id", ""),
+                            text=json.dumps(arguments),
                         )
+                        yield StreamEvent(type="content_block_stop", index=block_index)
 
                     if data.get("done"):
+                        if text_started:
+                            yield StreamEvent(type="content_block_stop", index=text_index)
+                            text_started = False
+                        yield StreamEvent(
+                            type="usage",
+                            usage={
+                                "input_tokens": data.get("prompt_eval_count", 0),
+                                "output_tokens": data.get("eval_count", 0),
+                            },
+                        )
                         yield StreamEvent(type="message_stop")
         except httpx.HTTPError as e:
             logger.error(f"Ollama streaming error: {e}")
@@ -169,15 +252,9 @@ class OllamaProvider(BaseProvider):
         tools: list[ToolSchema],
         max_tokens: int = 8192,
     ) -> ModelResponse:
-        ollama_messages = []
-        if system:
-            ollama_messages.append({"role": "system", "content": system})
-        for msg in messages:
-            ollama_messages.append(self._format_message(msg))
-
         payload: dict[str, Any] = {
             "model": model,
-            "messages": ollama_messages,
+            "messages": self._build_messages(system, messages),
             "stream": False,
             "options": {"num_predict": max_tokens},
         }
@@ -199,16 +276,18 @@ class OllamaProvider(BaseProvider):
                     tool_call=ToolCall(
                         id=tc.get("id", ""),
                         name=tc.get("function", {}).get("name", ""),
-                        input=tc.get("function", {}).get("arguments", {}),
+                        input=self._tool_arguments(
+                            tc.get("function", {}).get("arguments", {})
+                        ),
                     ),
                 )
             )
 
         return ModelResponse(
             content=blocks,
-            stop_reason=data.get("done_reason", "end_turn"),
+            stop_reason="tool_use" if tool_calls else "end_turn",
             usage={
-                "prompt_tokens": data.get("prompt_eval_count", 0),
-                "completion_tokens": data.get("eval_count", 0),
+                "input_tokens": data.get("prompt_eval_count", 0),
+                "output_tokens": data.get("eval_count", 0),
             },
         )
