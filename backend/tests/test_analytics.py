@@ -1141,3 +1141,28 @@ class TestEdgeCases:
         record("test.event", None)
         e = last_event("test.event")
         assert "os" in e["properties"]  # system props still added
+
+    def test_opted_out_installation_does_not_send_events(self, monkeypatch):
+        """The privacy preference must stop all outbound event capture."""
+        import backend.apps.analytics.collector as collector
+
+        monkeypatch.setattr(collector, "_is_opted_in", lambda: False)
+        record("test.event", {"key": "value"})
+
+        assert events("test.event") == []
+
+    @pytest.mark.asyncio
+    async def test_usage_summary_reports_its_local_data_source(self, monkeypatch):
+        """The usage endpoint is backed by local persisted session data."""
+        import backend.apps.analytics.analytics as analytics_api
+        import backend.apps.agents.agent_manager as agent_manager_module
+
+        monkeypatch.setattr(analytics_api, "_load_all_sessions", lambda: [])
+        monkeypatch.setattr(
+            agent_manager_module.agent_manager, "get_all_sessions", lambda: []
+        )
+
+        summary = await analytics_api.usage_summary()
+
+        assert summary["cost_source"] == "local_session_data"
+        assert summary["total_sessions"] == 0

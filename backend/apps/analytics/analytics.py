@@ -236,6 +236,8 @@ async def usage_summary():
     avg_cost = total_cost / total_sessions if total_sessions > 0 else 0
 
     return {
+        # Usage is calculated from local session files and active in-memory sessions.
+        "cost_source": "local_session_data",
         "total_sessions": total_sessions,
         "total_cost_usd": round(total_cost, 4),
         "total_messages": total_messages,
@@ -247,7 +249,6 @@ async def usage_summary():
         "providers_used": dict(provider_counts.most_common(10)),
         "top_tools": dict(tool_counts.most_common(15)),
         "status_breakdown": dict(status_counts),
-        "cost_source": cost_source,
     }
 
 
@@ -259,7 +260,12 @@ async def cost_breakdown(period: str = "7d"):
 
 @analytics.router.get("/status")
 async def analytics_status():
-    return {"status": "posthog", "enabled": True}
+    from backend.apps.settings.settings import load_settings
+
+    return {
+        "status": "posthog",
+        "enabled": bool(load_settings().analytics_opt_in),
+    }
 
 
 @analytics.router.post("/event")
