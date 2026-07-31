@@ -136,48 +136,36 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
             "reasoning": True,
         },
     ],
-    # Google: Gemini via Gemini CLI subscription. Both 3.x (thinking-
-    # capable) and 2.5 (stable) are offered. Gemini 3 models have
-    # always-on thinking with per-session thought signatures that are
-    # lost during format translation round-trips. Google's official
-    # workaround uses `skip_thought_signature_validator` on all
-    # historical function call and thinking parts. This bypasses
-    # signature validation at the cost of the model not being able
-    # to build on prior reasoning across turns — but all tools work.
+    # Google: direct Gemini API-key models through Google's OpenAI-compatible
+    # endpoint. Values are exact model IDs accepted by that endpoint.
     "Google": [
         {
-            "value": "gemini-3-pro",
-            "label": "Gemini 3 Pro",
+            "value": "gemini-3-pro-preview",
+            "label": "Gemini 3 Pro Preview",
             "context_window": 1_000_000,
-            "router_model_id": "gc/gemini-3-pro-preview",
-            "api": "gemini-cli",
-            "subscription_only": True,
+            "api": "gemini",
             "reasoning": True,
         },
         {
-            "value": "gemini-3-flash",
-            "label": "Gemini 3 Flash",
+            "value": "gemini-3-flash-preview",
+            "label": "Gemini 3 Flash Preview",
             "context_window": 1_000_000,
-            "router_model_id": "gc/gemini-3-flash-preview",
-            "api": "gemini-cli",
-            "subscription_only": True,
+            "api": "gemini",
             "reasoning": True,
         },
         {
             "value": "gemini-2.5-pro",
             "label": "Gemini 2.5 Pro",
             "context_window": 1_000_000,
-            "router_model_id": "gc/gemini-2.5-pro",
-            "api": "gemini-cli",
-            "subscription_only": True,
+            "api": "gemini",
+            "reasoning": True,
         },
         {
             "value": "gemini-2.5-flash",
             "label": "Gemini 2.5 Flash",
             "context_window": 1_000_000,
-            "router_model_id": "gc/gemini-2.5-flash",
-            "api": "gemini-cli",
-            "subscription_only": True,
+            "api": "gemini",
+            "reasoning": True,
         },
     ],
 }
@@ -347,12 +335,15 @@ def create_provider(
             api_key=settings.openai_api_key, base_url="https://api.openai.com/v1"
         )
 
-    if api_type == "gemini":
-        from backend.apps.agents.providers.gemini import GeminiProvider
+    if api_type in {"gemini", "gemini-cli"}:
+        from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
 
         if not settings.google_api_key:
             raise ValueError("Google API key not configured. Set it in Settings.")
-        return GeminiProvider(api_key=settings.google_api_key)
+        return OpenAICompatProvider(
+            api_key=settings.google_api_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
 
     if api_type == "openrouter":
         from backend.apps.agents.providers.openai_compat import OpenAICompatProvider

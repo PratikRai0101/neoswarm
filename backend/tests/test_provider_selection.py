@@ -15,6 +15,7 @@ from backend.apps.agents.models import AgentConfig
 from backend.apps.settings.models import AppSettings
 from backend.apps.agents.providers.registry import (
     get_api_type,
+    create_provider,
     provider_for_model,
     resolve_provider_name,
 )
@@ -39,7 +40,13 @@ async def test_model_catalog_exposes_direct_openai_models_with_a_key(monkeypatch
     import backend.apps.settings.settings as settings_api
 
     monkeypatch.setattr(
-        settings_api, "load_settings", lambda: AppSettings(openai_api_key="test-key")
+        settings_api,
+        "load_settings",
+        lambda: AppSettings(
+            openai_api_key="test-key",
+            google_api_key="google-key",
+            copilot_github_token="copilot-token-without-an-adapter",
+        ),
     )
 
     catalog = await agents_api.list_models()
@@ -50,6 +57,21 @@ async def test_model_catalog_exposes_direct_openai_models_with_a_key(monkeypatch
         "gpt-5.4-mini",
         "gpt-5.3-codex",
     }
+    assert {item["value"] for item in catalog["models"]["Google"]} >= {
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+    }
+    assert "Copilot" not in catalog["models"]
+    assert "GitHub Models" not in catalog["models"]
+
+
+def test_google_provider_uses_the_supported_openai_compatible_endpoint():
+    provider = create_provider("google", AppSettings(google_api_key="google-key"))
+
+    assert provider.__class__.__name__ == "OpenAICompatProvider"
+    assert str(provider.client.base_url) == (
+        "https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
 
 
 @pytest.mark.asyncio
