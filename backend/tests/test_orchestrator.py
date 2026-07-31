@@ -99,3 +99,29 @@ async def test_mission_creation_validates_input():
         await coordinator.create_session("  ")
     with pytest.raises(ValueError, match="execution_mode"):
         await coordinator.create_session("Build", execution_mode="invalid")
+
+
+@pytest.mark.asyncio
+async def test_mission_routes_create_start_and_report_a_mission(monkeypatch):
+    import backend.apps.agents.agents as agents_api
+
+    coordinator = Orchestrator(FakeAgentManager())
+    monkeypatch.setattr(agents_api, "orchestrator", coordinator)
+    monkeypatch.setattr(
+        coordinator,
+        "decompose_mission",
+        AsyncMock(return_value=[SubTask(id="one", description="Implement")]),
+    )
+
+    created = await agents_api.create_mission(
+        {"mission": "Implement a feature", "workers": 1, "execution_mode": "parallel"}
+    )
+    mission_id = created["mission"]["id"]
+    started = await agents_api.start_mission(mission_id)
+    worker_task = coordinator._execution_tasks[mission_id]
+    await worker_task
+    reported = await agents_api.get_mission(mission_id)
+
+    assert started["mission"]["id"] == mission_id
+    assert reported["mission"]["status"] == "completed"
+    assert reported["mission"]["tasks"][0]["status"] == "completed"
