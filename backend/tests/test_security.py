@@ -5,6 +5,13 @@ from fastapi.testclient import TestClient
 from backend.main import app
 
 
+def test_health_endpoint_uses_the_shared_json_contract():
+    response = TestClient(app).get("/api/health/check")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_cors_allows_local_frontends_but_not_arbitrary_websites():
     client = TestClient(app)
 
