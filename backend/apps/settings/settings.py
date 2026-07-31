@@ -33,6 +33,12 @@ SECRET_FIELDS = frozenset(
         "copilot_token",
     }
 )
+ENV_SECRET_FIELDS = {
+    "ANTHROPIC_API_KEY": "anthropic_api_key",
+    "OPENAI_API_KEY": "openai_api_key",
+    "GOOGLE_API_KEY": "google_api_key",
+    "OPENROUTER_API_KEY": "openrouter_api_key",
+}
 
 
 @asynccontextmanager
@@ -44,22 +50,60 @@ async def settings_lifespan():
 settings = SubApp("settings", settings_lifespan)
 
 
-def load_settings() -> AppSettings:
-    """Load settings from JSON file, returning defaults if not found."""
+def _load_persisted_settings() -> AppSettings:
     if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE) as f:
-            settings = AppSettings(**json.load(f))
-        if settings.default_system_prompt is None:
-            settings.default_system_prompt = DEFAULT_SYSTEM_PROMPT
-        return settings
+        with open(SETTINGS_FILE) as file:
+            return AppSettings(**json.load(file))
     return AppSettings()
 
 
+def load_settings() -> AppSettings:
+    """Load effective settings with environment credentials taking priority."""
+    current = _load_persisted_settings()
+    if current.default_system_prompt is None:
+        current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
+    for environment_name, field in ENV_SECRET_FIELDS.items():
+        value = os.environ.get(environment_name)
+        if value:
+            setattr(current, field, value)
+    return current
+
+
 def _save_settings(settings_obj: AppSettings):
-    """Persist settings to JSON file."""
+    """Atomically persist owner-readable settings without copying ENV secrets."""
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings_obj.model_dump(), f, indent=2)
+    data = settings_obj.model_dump()
+
+    # Environment credentials are effective runtime values, not application
+    # data. Preserve the previously stored value rather than writing an ENV
+    # secret when analytics or another setting triggers a save.
+    persisted = _load_persisted_settings()
+    for environment_name, field in ENV_SECRET_FIELDS.items():
+        if os.environ.get(environment_name):
+            data[field] = getattr(persisted, field)
+
+    descriptor, temporary = tempfile.mkstemp(prefix="settings-", suffix=".tmp", dir=DATA_DIR)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w") as file:
+            json.dump(data, file, indent=2)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, SETTINGS_FILE)
+        try:
+            os.chmod(SETTINGS_FILE, 0o600)
+        except OSError:
+            pass
+    except Exception:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
 
 def _public_settings(settings_obj: AppSettings) -> dict:
@@ -170,9 +214,7 @@ async def get_default_system_prompt():
 async def reset_system_prompt():
     current = load_settings()
     current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(current.model_dump(), f, indent=2)
+    _save_settings(current)
     return {"ok": True, "settings": _public_settings(current)}
 
 
