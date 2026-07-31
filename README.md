@@ -5,133 +5,122 @@
 <h1 align="center">NeoSwarm</h1>
 
 <p align="center">
-  <strong>A cross-platform, locally-running AI agent orchestrator</strong>
-  <br>
-  A fork of OpenSwarm with the Team Lead (Orchestrator) Agent that manages a swarm of worker agents in parallel.
+  <strong>A local-first AI-agent workspace with GUI, TUI, and multi-agent missions</strong>
 </p>
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <a href="#"><img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-green.svg" alt="Platforms"></a>
-  <a href="https://github.com/pratikrai0101/neoswarm/stargazers"><img src="https://img.shields.io/github/stars/pratikrai0101/neoswarm?style=social" alt="GitHub Stars"></a>
-  <a href="https://github.com/pratikrai0101/neoswarm/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
-</p>
+## What it is
 
-## What is NeoSwarm?
+NeoSwarm is a FastAPI agent backend with a React/Tauri desktop workspace and a
+Textual terminal UI. It can run with local Ollama models or direct Anthropic and
+OpenAI API keys. Agents keep session data locally and can use built-in tools or
+configured MCP tools.
 
-NeoSwarm is a **locally-running AI agent orchestrator** with a Team Lead (Orchestrator) Agent that manages a swarm of worker agents in parallel. It runs 100% on your machine — no cloud relay, no telemetry.
+> **Privacy:** model requests go to whichever provider you configure. Product
+> analytics are enabled by default but can be disabled in Settings; disabling
+> them prevents PostHog event capture. API keys remain local and are redacted
+> from settings responses.
 
-Built for **Linux first**, then Windows, then macOS. Available as a **Tauri GUI**, an **OpenCode-style TUI**, and a **Codex-style CLI**.
+## Implemented capabilities
 
-## Why NeoSwarm?
+- Streaming single-agent sessions with tool approvals, branches, and persistence
+- Anthropic, Ollama, and direct OpenAI provider paths
+- React dashboard: chats, skills, modes, tools, outputs, browser cards, settings
+- Textual TUI: session rail, streaming transcript, activity panel, model picker,
+  approval commands, and reconnecting WebSocket transport
+- Multi-agent mission API with sequential or parallel worker scheduling:
+  `POST /api/agents/missions`
+- Tauri desktop shell, currently bundled for **Linux AppImage and deb**
 
-- **Orchestrator Agent**: Your AI project manager — give it a mission, it figures out who does what
-- **100% Local**: No data leaves your machine unless you configure cloud providers
-- **Offline-capable**: Run entirely with local Ollama models
-- **Three Interfaces**: GUI, TUI, and CLI — your choice at runtime
-- **Native AgentLoop**: Replaces proprietary SDK with pure Python
-- **Cross-platform**: Linux first, then Windows, then macOS
-
-## Key Features
-
-- **Team Lead / Orchestrator Agent** — Decompose complex goals into tasks, spawn workers, monitor progress, synthesize results
-- **Parallel agents, one screen** — Launch as many agents as you need
-- **Human-in-the-Loop Approvals** — Every tool-use request surfaces in one place
-- **Git Worktree Isolation** — Each agent works in its own branch
-- **Offline operation** — Run entirely with Ollama (local models)
-
-## Quick Start
-
-### 1. Backend (FastAPI)
+## Quick start
 
 ```bash
-cd neoswarm
-source backend/.venv/bin/activate
-PYTHONPATH=. python -m uvicorn backend.main:app --port 8324
+# 1. Backend runtime (Python 3.11+)
+python3.11 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt
+
+# 2. Web workspace
+(cd frontend && npm install)
+
+# 3. Start backend + web UI
+./run.sh
 ```
 
-Then open:
-- **API**: http://localhost:8324
-- **Health**: http://localhost:8324/api/health/check
-- **API Docs**: http://localhost:8324/docs
+Open the web UI at http://localhost:3000. The backend health check is
+http://127.0.0.1:8324/api/health/check and interactive OpenAPI docs are at
+http://127.0.0.1:8324/docs.
 
-### 2. CLI
+### TUI
+
+With the backend running:
 
 ```bash
-cd neoswarm/cli
-pip install -e .
-
-# Commands
-neoswarm models      # Show available models
-neoswarm status      # Show session status
-neoswarm sessions    # List all sessions
+backend/.venv/bin/python -m cli.tui
 ```
 
-### 3. Native App (Tauri)
+The terminal UI uses `^N` for a new chat, `^P`/`^M` for the command center,
+`^S` to toggle sessions, `^A` to toggle activity, and `/approve` or `/deny` for
+a waiting tool approval.
+
+### Tauri development
+
+Install the Tauri v2 CLI, complete the backend/frontend setup above, then run:
 
 ```bash
-# Run the pre-built binary
-./src-tauri/target/debug/neoswarm
+cd src-tauri
+cargo tauri dev
+```
 
-# Or build release
+Release bundles currently target Linux:
+
+```bash
+cd src-tauri
 cargo tauri build
 ```
 
-### 4. Run Script
+## Multi-agent missions
+
+Create a mission, start it, and poll its status. Worker sessions reuse the same
+provider and model selection as regular agents.
 
 ```bash
-bash run.sh
+curl -X POST http://127.0.0.1:8324/api/agents/missions \
+  -H 'content-type: application/json' \
+  -d '{"mission":"Implement and verify a small feature","workers":2,"execution_mode":"parallel","model":"llama3.3","provider":"ollama"}'
+
+curl -X POST http://127.0.0.1:8324/api/agents/missions/<mission-id>/start
+curl http://127.0.0.1:8324/api/agents/missions/<mission-id>
 ```
 
 ## Architecture
 
-```
-┌─────────────────────────────────────┐
-│       USER INTERFACES               │
-│  Tauri GUI  │  TUI  │  CLI          │
-└──────┬──────────────────┬───────────┘
-       │     REST+WebSocket
-       ▼
-┌──────────────────────────────┐
-│    NEOSWARM CORE             │
-│    FastAPI :8324             │
-│  ┌──────────────────────┐    │
-│  │  Orchestrator Agent  │    │
-│  │  Agent Manager       │    │
-│  │  Provider Registry   │    │
-│  └──────────────────────┘    │
-└──────────────────────────────┘
-       │
-   Ollama (local) / Cloud APIs
+```text
+React web workspace / Textual TUI / Tauri desktop
+                    │ REST + WebSocket
+                    ▼
+              FastAPI backend
+         sessions · providers · tools · missions
+                    │
+        Ollama / configured cloud-model providers / MCP tools
 ```
 
-## Tech Stack
+Persistent data defaults to `backend/data/` in development. Set
+`NEOSWARM_DATA_DIR` to place it elsewhere. Packaged desktop builds use the
+platform application-data directory.
 
-| Layer | Technology |
-|-------|-----------|
-| Desktop Shell | Tauri v2 (Rust) |
-| GUI Frontend | React 18 + TypeScript + Redux + Material UI |
-| Backend | FastAPI + Python 3.11+ |
-| Agent Loop | Native Python AgentLoop |
-| Local Models | Ollama |
+## Development checks
+
+```bash
+# Backend and TUI tests
+PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q
+
+# Web production build
+(cd frontend && npm run build)
+
+# Tauri type/build check
+cargo check --manifest-path src-tauri/Cargo.toml
+```
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
-## Credits
-
-**NeoSwarm is built upon [OpenSwarm](https://github.com/openswarm-ai/openswarm) by [Haik Decie](https://github.com/haikdecie).**
-
-OpenSwarm was created by Haik Decie and licensed under the MIT License. NeoSwarm is a fork that extends the original with:
-
-- Linux-first support (replacing Electron with Tauri)
-- Native AgentLoop (replacing claude-agent-sdk)
-- Ollama local model support
-- Team Lead / Orchestrator Agent
-
-Original OpenSwarm repository: https://github.com/openswarm-ai/openswarm
-
----
-
-*NeoSwarm: Your local AI agent swarm, your way.*
+MIT License — see [LICENSE](LICENSE). NeoSwarm is based on the MIT-licensed
+[OpenSwarm](https://github.com/openswarm-ai/openswarm) project.
