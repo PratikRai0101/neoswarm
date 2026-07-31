@@ -53,7 +53,7 @@ to `http://localhost:8324`.
 
 ## Configure a model
 
-Use the Settings screen to enter an Anthropic or OpenAI key, or run Ollama:
+Use the Settings screen to enter an Anthropic, OpenAI, or Google Gemini key, or run Ollama:
 
 ```bash
 ollama serve
@@ -65,7 +65,9 @@ keys are stored in local settings and are never returned by the settings API.
 
 ## Run a mission
 
-NeoSwarm can coordinate worker sessions through the API:
+Open **Missions** from the app sidebar to create and monitor a mission. Choose
+parallel or sequential execution, the worker count, and optionally isolated git
+worktrees. NeoSwarm can also coordinate workers through the API:
 
 ```bash
 curl -X POST http://127.0.0.1:8324/api/agents/missions \
@@ -86,7 +88,10 @@ cd src-tauri
 cargo tauri dev
 ```
 
-The current release bundle targets Linux AppImage and deb packages.
+The current release bundle targets Linux AppImage and deb packages. Release
+builds automatically create and bundle a self-contained backend executable, so
+end users do not need Python or a virtual environment. The build machine still
+needs the backend venv described above.
 
 ## Verification
 

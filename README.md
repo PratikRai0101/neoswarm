@@ -11,8 +11,8 @@
 ## What it is
 
 NeoSwarm is a FastAPI agent backend with a React/Tauri desktop workspace and a
-Textual terminal UI. It can run with local Ollama models or direct Anthropic and
-OpenAI API keys. Agents keep session data locally and can use built-in tools or
+Textual terminal UI. It can run with local Ollama models or direct Anthropic,
+OpenAI, and Google Gemini API keys. Agents keep session data locally and can use built-in tools or
 configured MCP tools.
 
 > **Privacy:** model requests go to whichever provider you configure. Product
@@ -23,13 +23,14 @@ configured MCP tools.
 ## Implemented capabilities
 
 - Streaming single-agent sessions with tool approvals, branches, and persistence
-- Anthropic, Ollama, and direct OpenAI provider paths
+- Anthropic, Ollama, direct OpenAI, and Google Gemini provider paths
 - React dashboard: chats, skills, modes, tools, outputs, browser cards, settings
 - Textual TUI: session rail, streaming transcript, activity panel, model picker,
   approval commands, and reconnecting WebSocket transport
-- Multi-agent mission API with sequential or parallel worker scheduling:
-  `POST /api/agents/missions`
-- Tauri desktop shell, currently bundled for **Linux AppImage and deb**
+- Multi-agent mission workspace and API with sequential or parallel workers
+- Optional per-worker git worktree isolation with dirty-worktree protection
+- Tauri desktop shell with a self-contained PyInstaller backend executable;
+  current release targets are **Linux AppImage and deb**
 
 ## Quick start
 
@@ -70,17 +71,23 @@ cd src-tauri
 cargo tauri dev
 ```
 
-Release bundles currently target Linux:
+Release bundles currently target Linux. The build installs the pinned build
+requirements, creates a self-contained backend executable, builds the frontend,
+and bundles both into the app:
 
 ```bash
 cd src-tauri
 cargo tauri build
 ```
 
+The resulting desktop installation does not require the user to install Python
+or backend packages.
+
 ## Multi-agent missions
 
-Create a mission, start it, and poll its status. Worker sessions reuse the same
-provider and model selection as regular agents.
+Use **Missions** in the desktop/web sidebar to launch and monitor work, or use
+the endpoints below. Worker sessions reuse the same provider and model selection
+as regular agents and can optionally run in isolated git worktrees.
 
 ```bash
 curl -X POST http://127.0.0.1:8324/api/agents/missions \
