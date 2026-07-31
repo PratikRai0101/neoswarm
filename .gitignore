@@ -5,8 +5,11 @@ backend/data/**
 !backend/data/outputs/
 !backend/data/outputs/*.json
 
-# Frontend build output
+# Build outputs
 frontend/dist/
+.build/
+backend-dist/*
+!backend-dist/.gitkeep
 
 # Bundled uv binaries (downloaded during build)
 backend/uv-bin/

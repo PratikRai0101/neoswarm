@@ -5,7 +5,8 @@
   "build": {
     "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "cd ../frontend && npm run dev"
+    "beforeDevCommand": "cd ../frontend && npm run dev",
+    "beforeBuildCommand": "cd ../frontend && npm ci --ignore-scripts && npm run build && cd .. && ./scripts/build-backend-binary.sh"
   },
   "app": {
     "windows": [
@@ -28,7 +29,8 @@
     "active": true,
     "targets": ["appimage", "deb"],
     "resources": {
-      "../backend": "backend"
+      "../backend": "backend",
+      "../backend-dist": "backend-dist"
     },
     "icon": [
       "icons/32x32.png",
