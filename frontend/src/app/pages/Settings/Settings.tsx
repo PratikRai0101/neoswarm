@@ -39,7 +39,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import Collapse from '@mui/material/Collapse';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT } from '@/shared/state/settingsSlice';
+import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT, SECRET_UNCHANGED } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError, setInstalling } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
@@ -1494,7 +1494,7 @@ const Settings: React.FC = () => {
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               <TextField
                 type={showApiKey ? 'text' : 'password'}
-                value={form.anthropic_api_key ?? ''}
+                value={form.anthropic_api_key === SECRET_UNCHANGED ? '' : form.anthropic_api_key ?? ''}
                 onChange={(e) => setForm({ ...form, anthropic_api_key: e.target.value || null })}
                 size="small"
                 fullWidth
@@ -1534,7 +1534,7 @@ const Settings: React.FC = () => {
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               <TextField
                 type={showApiKey ? 'text' : 'password'}
-                value={form.openai_api_key ?? ''}
+                value={form.openai_api_key === SECRET_UNCHANGED ? '' : form.openai_api_key ?? ''}
                 onChange={(e) => setForm({ ...form, openai_api_key: e.target.value || null })}
                 size="small"
                 fullWidth
@@ -1574,7 +1574,7 @@ const Settings: React.FC = () => {
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               <TextField
                 type={showApiKey ? 'text' : 'password'}
-                value={form.google_api_key ?? ''}
+                value={form.google_api_key === SECRET_UNCHANGED ? '' : form.google_api_key ?? ''}
                 onChange={(e) => setForm({ ...form, google_api_key: e.target.value || null })}
                 size="small"
                 fullWidth
@@ -1614,7 +1614,7 @@ const Settings: React.FC = () => {
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               <TextField
                 type={showApiKey ? 'text' : 'password'}
-                value={form.openrouter_api_key ?? ''}
+                value={form.openrouter_api_key === SECRET_UNCHANGED ? '' : form.openrouter_api_key ?? ''}
                 onChange={(e) => setForm({ ...form, openrouter_api_key: e.target.value || null })}
                 size="small"
                 fullWidth

@@ -3,6 +3,9 @@ import { API_BASE } from '@/shared/config';
 
 const SETTINGS_API = `${API_BASE}/settings`;
 
+/** Marker returned by the backend for an existing credential it will preserve. */
+export const SECRET_UNCHANGED = '__neoswarm_secret_unchanged__';
+
 export const DEFAULT_SYSTEM_PROMPT =
   `You are a personal AI assistant running inside NeoSwarm.\n\n` +
   `## Tool Priority\n` +
