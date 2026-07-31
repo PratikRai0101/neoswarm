@@ -22,6 +22,7 @@ import Modes from './pages/Modes/Modes';
 import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
 import Analytics from './pages/Analytics/Analytics';
+import Missions from './pages/Missions/Missions';
 import OnboardingModal from './components/OnboardingModal';
 import { trackEvent, getLastAction, getLastPage, getTimeSpent } from '@/shared/analytics';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
@@ -251,6 +252,7 @@ const ThemedApp: React.FC = () => {
                       persistently inside AppShell so its webviews survive navigation between
                       routes. This route exists only so React Router matches the URL. */}
                   <Route path="/dashboard/:id" element={null} />
+                  <Route path="/missions" element={<Missions />} />
                   <Route path="/customization" element={<Customization />} />
                   <Route path="/skills" element={<Skills />} />
                   <Route path="/actions" element={<Tools />} />

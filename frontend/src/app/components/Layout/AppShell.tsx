@@ -14,6 +14,7 @@ import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import InputBase from '@mui/material/InputBase';
 import DashboardIcon from '@mui/icons-material/Dashboard';
+import RocketLaunchOutlinedIcon from '@mui/icons-material/RocketLaunchOutlined';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import BuildIcon from '@mui/icons-material/Build';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -287,6 +288,7 @@ const AppShell: React.FC = () => {
 
   const isDashboardRoute = location.pathname === '/' || location.pathname.startsWith('/dashboard/');
   const isDashboardViewActive = location.pathname.startsWith('/dashboard/');
+  const isMissionsRoute = location.pathname === '/missions';
   const isAppsRoute = location.pathname === '/apps' || location.pathname.startsWith('/apps/');
   const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
@@ -745,6 +747,38 @@ const AppShell: React.FC = () => {
                 })}
               </Box>
             </Collapse>
+          </Box>
+
+          {/* Divider */}
+          <Box sx={{ mx: 1.5, my: 0.5, borderTop: `0.5px solid ${c.border.subtle}` }} />
+
+          {/* Multi-agent missions */}
+          <Box sx={{ px: 1, mb: 0.25 }}>
+            <ListItemButton
+              onClick={() => navigate('/missions')}
+              sx={{
+                borderRadius: 1.5,
+                py: 0.6,
+                px: 1.25,
+                bgcolor: isMissionsRoute ? `${c.accent.primary}12` : 'transparent',
+                '&:hover': { bgcolor: isMissionsRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <ListItemIcon sx={{ color: isMissionsRoute ? c.accent.primary : c.text.tertiary, minWidth: 32 }}>
+                <RocketLaunchOutlinedIcon sx={{ fontSize: 20 }} />
+              </ListItemIcon>
+              <ListItemText
+                primary="Missions"
+                sx={{
+                  '& .MuiListItemText-primary': {
+                    color: isMissionsRoute ? c.text.primary : c.text.muted,
+                    fontSize: '0.82rem',
+                    fontWeight: isMissionsRoute ? 600 : 400,
+                  },
+                }}
+              />
+            </ListItemButton>
           </Box>
 
           {/* Divider */}
