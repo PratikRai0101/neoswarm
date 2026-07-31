@@ -10,6 +10,12 @@ from typing import Optional
 
 from backend.config.Apps import SubApp
 from backend.apps.settings.models import AppSettings, DEFAULT_SYSTEM_PROMPT
+from backend.apps.settings.secret_store import (
+    custom_provider_secret_name,
+    delete_secret,
+    get_secret,
+    set_secret,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +56,25 @@ async def settings_lifespan():
 settings = SubApp("settings", settings_lifespan)
 
 
-def _load_persisted_settings() -> AppSettings:
+def _load_settings_file() -> AppSettings:
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE) as file:
             return AppSettings(**json.load(file))
     return AppSettings()
+
+
+def _load_persisted_settings() -> AppSettings:
+    """Load settings and overlay credentials from the platform keychain."""
+    current = _load_settings_file()
+    for field in SECRET_FIELDS:
+        secure_value = get_secret(field)
+        if secure_value is not None:
+            setattr(current, field, secure_value)
+    for provider in current.custom_providers:
+        secure_value = get_secret(custom_provider_secret_name(provider.name))
+        if secure_value is not None:
+            provider.api_key = secure_value
+    return current
 
 
 def load_settings() -> AppSettings:
@@ -69,18 +89,62 @@ def load_settings() -> AppSettings:
     return current
 
 
-def _save_settings(settings_obj: AppSettings):
-    """Atomically persist owner-readable settings without copying ENV secrets."""
+def _save_settings(
+    settings_obj: AppSettings,
+    *,
+    secret_fields_to_update: set[str] | None = None,
+):
+    """Atomically persist settings, preferring the platform keychain for secrets."""
     os.makedirs(DATA_DIR, exist_ok=True)
     data = settings_obj.model_dump()
+    explicit_secret_updates = secret_fields_to_update or set()
+    persisted_file = _load_settings_file()
+    environment_fields = {
+        field
+        for environment_name, field in ENV_SECRET_FIELDS.items()
+        if os.environ.get(environment_name)
+    }
 
-    # Environment credentials are effective runtime values, not application
-    # data. Preserve the previously stored value rather than writing an ENV
-    # secret when analytics or another setting triggers a save.
-    persisted = _load_persisted_settings()
-    for environment_name, field in ENV_SECRET_FIELDS.items():
-        if os.environ.get(environment_name):
-            data[field] = getattr(persisted, field)
+    for field in SECRET_FIELDS:
+        if field in environment_fields:
+            # Environment values are runtime-only and must never replace a
+            # stored keychain or compatibility-fallback credential.
+            data[field] = getattr(persisted_file, field)
+            continue
+
+        value = getattr(settings_obj, field)
+        if value:
+            if set_secret(field, value):
+                data[field] = None
+        elif field in explicit_secret_updates:
+            delete_secret(field)
+            data[field] = None
+        else:
+            # An unrelated settings save must not erase a fallback credential
+            # if the keychain was temporarily unavailable during the read.
+            data[field] = getattr(persisted_file, field)
+
+    persisted_custom = {
+        provider.name: provider for provider in persisted_file.custom_providers
+    }
+    current_custom_names = set()
+    custom_providers_explicit = "custom_providers" in explicit_secret_updates
+    for provider, provider_data in zip(settings_obj.custom_providers, data["custom_providers"]):
+        current_custom_names.add(provider.name)
+        secret_name = custom_provider_secret_name(provider.name)
+        if provider.api_key:
+            if set_secret(secret_name, provider.api_key):
+                provider_data["api_key"] = ""
+        elif custom_providers_explicit:
+            delete_secret(secret_name)
+            provider_data["api_key"] = ""
+        else:
+            previous = persisted_custom.get(provider.name)
+            provider_data["api_key"] = previous.api_key if previous else ""
+
+    if custom_providers_explicit:
+        for removed_name in set(persisted_custom) - current_custom_names:
+            delete_secret(custom_provider_secret_name(removed_name))
 
     descriptor, temporary = tempfile.mkstemp(prefix="settings-", suffix=".tmp", dir=DATA_DIR)
     try:
@@ -185,7 +249,13 @@ async def update_settings(body: dict):
     if safe_changed:
         _analytics("settings.changed", {"changed_keys": safe_changed})
 
-    _save_settings(current)
+    explicit_secret_updates = {
+        field
+        for field, value in body.items()
+        if (field in SECRET_FIELDS and value != SECRET_UNCHANGED)
+        or field == "custom_providers"
+    }
+    _save_settings(current, secret_fields_to_update=explicit_secret_updates)
     return {"ok": True, "settings": _public_settings(current)}
 
 

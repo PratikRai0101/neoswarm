@@ -31,6 +31,7 @@ find "$DIST_DIR" -mindepth 1 ! -name .gitkeep -delete
   --name neoswarm-backend \
   --paths "$PROJECT_ROOT" \
   --collect-submodules backend.apps \
+  --collect-submodules keyring.backends \
   --hidden-import backports \
   --hidden-import backports.tarfile \
   --add-data "$PROJECT_ROOT/backend/apps/outputs/view_builder_skill.md:backend/apps/outputs" \

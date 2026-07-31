@@ -18,7 +18,9 @@ configured MCP tools.
 > **Privacy:** model requests go to whichever provider you configure. Anonymous
 > product analytics are off by default and require explicit opt-in in Settings;
 > prompts, responses, profile details, file contents, and error messages are not
-> included. API keys remain local and are redacted from settings responses.
+> included. API keys remain local, are stored in the platform keychain when
+> available (with an owner-only file fallback), and are redacted from settings
+> responses.
 
 ## Implemented capabilities
 
