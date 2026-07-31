@@ -809,7 +809,7 @@ async def _discover_mcp_tools_http(url: str, headers: dict | None = None) -> lis
                 "params": {
                     "protocolVersion": "2025-03-26",
                     "capabilities": {},
-                    "clientInfo": {"name": "self-swarm", "version": "0.1.0"},
+                    "clientInfo": {"name": "neoswarm", "version": "0.1.0"},
                 },
             },
         )
@@ -886,7 +886,7 @@ async def _discover_mcp_tools_sse(url: str, headers: dict | None = None) -> list
             async with ClientSession(
                 read_stream,
                 write_stream,
-                client_info=Implementation(name="self-swarm", version="0.1.0"),
+                client_info=Implementation(name="neoswarm", version="0.1.0"),
             ) as session:
                 await session.initialize()
                 result = await session.list_tools()
@@ -969,7 +969,7 @@ async def _discover_mcp_tools_stdio(
                 "params": {
                     "protocolVersion": "2025-03-26",
                     "capabilities": {},
-                    "clientInfo": {"name": "self-swarm", "version": "0.1.0"},
+                    "clientInfo": {"name": "neoswarm", "version": "0.1.0"},
                 },
             }
         )

@@ -175,7 +175,7 @@ const UpdateListener: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    const api = (window as any).neoswarm as OpenSwarmAPI | undefined;
+    const api = (window as any).neoswarm as NeoSwarmAPI | undefined;
     if (!api?.getAppVersion) return;
 
     api.getAppVersion().then((v: string) => dispatch(setAppVersion(v)));
@@ -196,9 +196,9 @@ const UpdateListener: React.FC<{ children: React.ReactNode }> = ({ children }) =
     });
 
     const cleanups = [
-      api.onUpdateAvailable?.((info: OpenSwarmUpdateInfo) => dispatch(setUpdateAvailable(info.version))),
+      api.onUpdateAvailable?.((info: NeoSwarmUpdateInfo) => dispatch(setUpdateAvailable(info.version))),
       api.onUpdateNotAvailable?.(() => dispatch(setUpdateNotAvailable())),
-      api.onDownloadProgress?.((p: OpenSwarmDownloadProgress) => dispatch(setDownloading(p.percent))),
+      api.onDownloadProgress?.((p: NeoSwarmDownloadProgress) => dispatch(setDownloading(p.percent))),
       api.onUpdateDownloaded?.(() => dispatch(setUpdateDownloaded())),
       api.onUpdateError?.((msg: string) => dispatch(setUpdateError(msg))),
     ];

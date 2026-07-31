@@ -10,11 +10,12 @@ interface ThemeContextValue {
   setMode: (mode: ThemeMode) => void;
 }
 
-const STORAGE_KEY = 'self-swarm-theme-mode';
+const STORAGE_KEY = 'neoswarm-theme-mode';
+const LEGACY_STORAGE_KEY = 'self-swarm-theme-mode';
 
 function getInitialMode(): ThemeMode {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
     if (stored === 'light' || stored === 'dark') return stored;
   } catch {}
   if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
@@ -32,7 +33,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [mode, setModeState] = useState<ThemeMode>(getInitialMode);
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, mode); } catch {}
+    try {
+      localStorage.setItem(STORAGE_KEY, mode);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    } catch {}
   }, [mode]);
 
   const tokens = useMemo(() => (mode === 'dark' ? darkTokens : lightTokens), [mode]);

@@ -182,7 +182,7 @@ class MCPClientManager:
             "params": {
                 "protocolVersion": "2025-03-26",
                 "capabilities": {},
-                "clientInfo": {"name": "self-swarm", "version": "0.1.0"},
+                "clientInfo": {"name": "neoswarm", "version": "0.1.0"},
             },
         })
         if init_resp.status_code not in (200, 201):

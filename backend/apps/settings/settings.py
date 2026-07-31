@@ -285,7 +285,7 @@ class BrowseResponse(BaseModel):
     files: list[str]
 
 
-UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "self-swarm-uploads")
+UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "neoswarm-uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
