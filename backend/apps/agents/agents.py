@@ -255,6 +255,7 @@ async def list_models():
                     continue
             visible.append(
                 {
+                    "provider": provider_name,
                     "value": m["value"],
                     "label": m["label"],
                     "context_window": m.get("context_window", 128_000),
@@ -277,8 +278,9 @@ async def list_models():
                     if name:
                         size_gb = m.get("size", 0) / (1024**3)
                         ollama_models.append({
-                            "value": name.split(":")[0].split("-")[0],
-                            "label": f"{name.split(':')[0]} ({size_gb:.1f}GB)",
+                            "provider": "Ollama",
+                            "value": name,
+                            "label": f"{name} ({size_gb:.1f}GB)",
                             "context_window": m.get("details", {}).get("context_length", 128_000),
                             "reasoning": False,
                         })

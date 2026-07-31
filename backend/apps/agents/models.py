@@ -7,7 +7,7 @@ class AgentConfig(BaseModel):
     name: str = Field(default_factory=lambda: f"Agent-{uuid4().hex[:6]}")
     model: str = "sonnet"
     mode: str = "agent"
-    provider: str = "anthropic"
+    provider: Optional[str] = None
     system_prompt: Optional[str] = None
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion"])
     max_turns: Optional[int] = None

@@ -28,6 +28,7 @@ import {
   duplicateSession,
   setActiveSession,
   updateSessionModel,
+  updateSessionProvider,
   updateSessionMode,
   updateSessionThinkingLevel,
   updateThinkingLevel,
@@ -146,6 +147,7 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [mode, setMode] = useState('agent');
   const [model, setModel] = useState('sonnet');
+  const [provider, setProvider] = useState('anthropic');
 
   const wsRef = useRef<ReturnType<typeof createSessionWs> | null>(null);
   const initialContextApplied = useRef(false);
@@ -189,6 +191,10 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   }, [session?.model]);
 
   useEffect(() => {
+    if (session) setProvider(session.provider);
+  }, [session?.provider]);
+
+  useEffect(() => {
     if (Object.keys(modesMap).length === 0) dispatch(fetchModes());
   }, [dispatch, modesMap]);
 
@@ -197,11 +203,11 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
     setShowResumeBubble(false);
     setAwaitingResponse(true);
     if (isDraft) {
-      const config: Record<string, any> = { model, mode };
+      const config: Record<string, any> = { model, mode, provider };
       if (session?.system_prompt) config.system_prompt = session.system_prompt;
       if (session?.target_directory) config.target_directory = session.target_directory;
       dispatch(
-        launchAndSendFirstMessage({ draftId: id, config, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds })
+        launchAndSendFirstMessage({ draftId: id, config, prompt: msg.prompt, mode, model, provider, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds })
       ).then((action) => {
         if (launchAndSendFirstMessage.fulfilled.match(action)) {
           const realId = action.payload.session.id;
@@ -215,14 +221,14 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
       if (msg.selectedBrowserIds?.length) {
         dispatch(setGlowingBrowserCards({ browserIds: msg.selectedBrowserIds, sessionId: id, label: 'Use Browser' }));
       }
-      dispatch(sendMessageThunk({ sessionId: id, prompt: msg.prompt, mode, model, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds }))
+      dispatch(sendMessageThunk({ sessionId: id, prompt: msg.prompt, mode, model, provider, images: msg.images, contextPaths: msg.contextPaths, forcedTools: msg.forcedTools, attachedSkills: msg.attachedSkills, selectedBrowserIds: msg.selectedBrowserIds }))
         .then((action) => {
           if (sendMessageThunk.rejected.match(action)) {
             setAwaitingResponse(false);
           }
         });
     }
-  }, [id, isDraft, mode, model, session?.system_prompt, session?.target_directory, dispatch]);
+  }, [id, isDraft, mode, model, provider, session?.system_prompt, session?.target_directory, dispatch]);
 
   const agentBusy = awaitingResponse || (!isDraft && (session?.status === 'running' || session?.status === 'waiting_approval'));
 
@@ -365,6 +371,11 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
   const handleModelChange = useCallback((newModel: string) => {
     setModel(newModel);
     if (id && !isDraft) dispatch(updateSessionModel({ sessionId: id, model: newModel }));
+  }, [id, isDraft, dispatch]);
+
+  const handleProviderChange = useCallback((newProvider: string) => {
+    setProvider(newProvider);
+    if (id && !isDraft) dispatch(updateSessionProvider({ sessionId: id, provider: newProvider }));
   }, [id, isDraft, dispatch]);
 
   const handleThinkingLevelChange = useCallback((level: 'off' | 'low' | 'medium' | 'high' | 'auto') => {
@@ -1188,6 +1199,8 @@ const AgentChat: React.FC<AgentChatProps> = ({ sessionId: sessionIdProp, onClose
                 onModeChange={handleModeChange}
                 model={model}
                 onModelChange={handleModelChange}
+                provider={provider}
+                onProviderChange={handleProviderChange}
                 isRunning={agentBusy}
                 onStop={handleStop}
                 queueLength={queueLength}

@@ -109,18 +109,14 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
             "reasoning": False,
         },
     ],
-    # OpenAI: ChatGPT Plus/Pro (Codex) subscription. gpt-5.4 is the
-    # current flagship — combines GPT-5.3 Codex coding capabilities with
-    # stronger reasoning, tool use, and agentic workflows.
-    # See: https://developers.openai.com/codex/models
+    # OpenAI: direct API-key models, served by OpenAICompatProvider.
     "OpenAI": [
         {
             "value": "gpt-5.4",
             "label": "GPT-5.4",
             "context_window": 1_000_000,
             "router_model_id": "cx/gpt-5.4",
-            "api": "codex",
-            "subscription_only": True,
+            "api": "openai",
             "reasoning": True,
         },
         {
@@ -128,8 +124,7 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
             "label": "GPT-5.4 Mini",
             "context_window": 400_000,
             "router_model_id": "cx/gpt-5.4-mini",
-            "api": "codex",
-            "subscription_only": True,
+            "api": "openai",
             "reasoning": True,
         },
         {
@@ -137,8 +132,7 @@ BUILTIN_MODELS: dict[str, list[dict[str, Any]]] = {
             "label": "GPT-5.3 Codex",
             "context_window": 400_000,
             "router_model_id": "cx/gpt-5.3-codex",
-            "api": "codex",
-            "subscription_only": True,
+            "api": "openai",
             "reasoning": True,
         },
     ],
@@ -270,6 +264,38 @@ def get_api_type(short_name: str) -> str:
     return (entry or {}).get("api", "anthropic")
 
 
+def provider_for_model(model: str, fallback: str = "anthropic") -> str:
+    """Choose the canonical provider for a known model selection."""
+    entry = _find_builtin_model(model)
+    api_type = (entry or {}).get("api")
+    return {
+        "anthropic": "anthropic",
+        "ollama": "ollama",
+        "openai": "openai",
+        "codex": "openai",
+        "gemini": "google",
+        "gemini-cli": "google",
+        "openrouter": "openrouter",
+    }.get(api_type, fallback)
+
+
+def resolve_provider_name(provider: str | None, model: str) -> str:
+    """Normalize an explicit provider or infer one from the selected model."""
+    if not provider:
+        return provider_for_model(model)
+    normalized = provider.strip().lower()
+    aliases = {
+        "anthropic": "anthropic",
+        "ollama": "ollama",
+        "openai": "openai",
+        "codex": "openai",
+        "google": "google",
+        "gemini": "google",
+        "openrouter": "openrouter",
+    }
+    return aliases.get(normalized, provider)
+
+
 def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     """Resolve a short model name into the id string for API calls."""
     entry = _find_builtin_model(short_name)
@@ -312,7 +338,7 @@ def create_provider(
             raise ValueError("Anthropic API key not configured. Set it in Settings.")
         return AnthropicProvider(api_key=settings.anthropic_api_key)
 
-    if api_type == "openai":
+    if api_type in {"openai", "codex"}:
         from backend.apps.agents.providers.openai_compat import OpenAICompatProvider
 
         if not settings.openai_api_key:
@@ -373,7 +399,9 @@ def _get_api_type(provider_name: str) -> str:
     # Lowercase API name mapping
     _API_NAME_MAP = {
         "anthropic": "anthropic",
+        "ollama": "ollama",
         "openai": "openai",
+        "codex": "openai",
         "gemini": "gemini",
         "google": "gemini",
         "openrouter": "openrouter",

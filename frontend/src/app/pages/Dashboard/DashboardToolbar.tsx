@@ -30,6 +30,7 @@ interface Props {
     prompt: string,
     mode: string,
     model: string,
+    provider: string,
     images?: Array<{ data: string; media_type: string }>,
     contextPaths?: ContextPath[],
     forcedTools?: string[],
@@ -95,6 +96,7 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
     const defaultModel = useAppSelector((s) => s.settings.data.default_model);
     const [mode, setMode] = useState(defaultMode || 'agent');
     const [model, setModel] = useState(defaultModel || 'sonnet');
+    const [provider, setProvider] = useState('anthropic');
     const [thinkingLevel, setThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high' | 'auto'>('auto');
     const settingsApplied = useRef(false);
     useEffect(() => {
@@ -143,9 +145,9 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
         attachedSkills?: Array<{ id: string; name: string; content: string }>,
         selectedBrowserIds?: string[],
       ) => {
-        onSend(message, mode, model, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds);
+        onSend(message, mode, model, provider, images, contextPaths, forcedTools, attachedSkills, selectedBrowserIds);
       },
-      [onSend, mode, model],
+      [onSend, mode, model, provider],
     );
 
     const handleCloseHistory = useCallback(() => {
@@ -366,6 +368,8 @@ const DashboardToolbar = React.forwardRef<HTMLDivElement, Props>(
               onModeChange={setMode}
               model={model}
               onModelChange={setModel}
+              provider={provider}
+              onProviderChange={setProvider}
               embedded
               autoFocus
               sessionId={TOOLBAR_OWNER_ID}

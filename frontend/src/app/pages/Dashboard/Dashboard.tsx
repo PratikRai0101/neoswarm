@@ -1139,6 +1139,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       prompt: string,
       mode: string,
       model: string,
+      provider: string,
       images?: Array<{ data: string; media_type: string }>,
       contextPaths?: ContextPath[],
       forcedTools?: string[],
@@ -1146,7 +1147,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
       selectedBrowserIds?: string[],
     ) => {
       setToolbarOpen(false);
-      trackEvent('dashboard.agent_created', { mode, model, has_images: !!images?.length, has_context: !!contextPaths?.length, has_browser: !!selectedBrowserIds?.length });
+      trackEvent('dashboard.agent_created', { mode, model, provider, has_images: !!images?.length, has_context: !!contextPaths?.length, has_browser: !!selectedBrowserIds?.length });
 
       const draftId = `draft-${Date.now().toString(36)}`;
 
@@ -1164,7 +1165,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         };
       }
 
-      const config: AgentConfig = { name: 'New chat', model, mode, dashboard_id: dashboardId };
+      const config: AgentConfig = { name: 'New chat', model, provider, mode, dashboard_id: dashboardId };
 
       dispatch(
         launchAndSendFirstMessage({
@@ -1173,6 +1174,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
           prompt,
           mode,
           model,
+          provider,
           images,
           contextPaths: contextPaths?.map((cp) => ({ path: cp.path, type: cp.type })),
           forcedTools,
@@ -1235,7 +1237,7 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
         }
       });
     },
-    [canvas.viewportRef, canvas.actions, dispatch, dashboardId, expandNewChats, handleHighlightCard],
+    [canvas.viewportRef, canvas.actions, dispatch, dashboardId, expandNewChats, handleHighlightCard, provider],
   );
 
   const handleAddView = useCallback((outputId: string) => {

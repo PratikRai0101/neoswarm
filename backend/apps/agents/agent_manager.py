@@ -461,10 +461,12 @@ class AgentManager:
 
         os.makedirs(effective_cwd, exist_ok=True)
 
+        from backend.apps.agents.providers.registry import resolve_provider_name
+
         session = AgentSession(
             id=session_id,
             name=config.name,
-            provider=getattr(config, "provider", "anthropic"),
+            provider=resolve_provider_name(config.provider, config.model),
             model=config.model,
             mode=config.mode,
             system_prompt=config.system_prompt,
@@ -1760,31 +1762,43 @@ class AgentManager:
             return
 
         session_changed = False
-        if model and model != session.model:
-            # Cross-provider model switches force a session fork. The CLI's
-            # resume transcript stores Anthropic-format content blocks with
-            # Anthropic tool_use_ids; replaying them on a non-Anthropic
-            # provider corrupts history silently (fixMissingToolResponses
-            # stubs missing tool responses with placeholder text).
-            # Forking starts a new CLI session so history is re-sent
-            # fresh in whichever format the new provider expects.
-            from backend.apps.agents.providers.registry import (
-                get_api_type as _get_api_type_for_model,
-            )
+        requested_model = model or session.model
+        from backend.apps.agents.providers.registry import (
+            get_api_type as _get_api_type_for_model,
+            resolve_provider_name,
+        )
 
-            if _get_api_type_for_model(session.model) != _get_api_type_for_model(model):
+        model_changed = bool(model and model != session.model)
+        requested_provider = (
+            resolve_provider_name(provider, requested_model)
+            if provider is not None or model_changed
+            else session.provider
+        )
+        provider_changed = requested_provider != session.provider
+        if model_changed or provider_changed:
+            # A provider/API transition needs a fresh transcript because tool
+            # messages are encoded differently by each provider adapter.
+            if (
+                _get_api_type_for_model(session.model)
+                != _get_api_type_for_model(requested_model)
+                or provider_changed
+            ):
                 session.needs_fork = True
                 logger.info(
-                    f"[MCP-DEBUG] Forking session: api_type changed {session.model}→{model}"
+                    "[AgentLoop] Forking session: provider/API changed %s/%s→%s/%s",
+                    session.provider,
+                    session.model,
+                    requested_provider,
+                    requested_model,
                 )
 
             _analytics(
                 "model.switched",
                 {
                     "from_model": session.model,
-                    "to_model": model,
+                    "to_model": requested_model,
                     "from_provider": session.provider,
-                    "to_provider": provider or session.provider,
+                    "to_provider": requested_provider,
                     "message_number": len(
                         [m for m in session.messages if m.role == "user"]
                     ),
@@ -1793,7 +1807,8 @@ class AgentManager:
                 session_id=session_id,
                 dashboard_id=session.dashboard_id,
             )
-            session.model = model
+            session.model = requested_model
+            session.provider = requested_provider
             session_changed = True
         if mode and mode != session.mode:
             _analytics(
