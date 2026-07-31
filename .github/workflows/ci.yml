@@ -47,6 +47,12 @@ jobs:
         env:
           NEOSWARM_DATA_DIR: ${{ runner.temp }}/neoswarm-bundle-data
         run: |
+          printf '%s' '{"code":"result={\"value\":input_data[\"value\"]}","input_data":{"value":42}}' \
+            | ./backend-dist/neoswarm-backend --internal python-exec \
+            | grep -q '"value": 42'
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+            | ./backend-dist/neoswarm-backend --internal browser-agent-mcp \
+            | grep -q 'neoswarm-browser-agent'
           ./backend-dist/neoswarm-backend --host 127.0.0.1 --port 18324 >backend.log 2>&1 &
           backend_pid=$!
           trap 'kill "$backend_pid" 2>/dev/null || true' EXIT
