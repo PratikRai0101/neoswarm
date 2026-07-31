@@ -83,12 +83,13 @@ module.exports = (env, argv) => {
       hot: true,
       open: false,
       historyApiFallback: true,
-      proxy: {
-        '/api': {
+      proxy: [
+        {
+          context: ['/api'],
           target: 'http://localhost:8324',
           changeOrigin: true,
         },
-      },
+      ],
     }
   };
 };

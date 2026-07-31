@@ -1,7 +1,7 @@
 {
-  "name": "open-swarm",
-  "version": "1.0.0",
-  "description": "Open Swarm — Agent Orchestrator frontend built with React",
+  "name": "neoswarm",
+  "version": "0.1.0",
+  "description": "NeoSwarm local-first agent workspace built with React",
   "scripts": {
     "build": "webpack --mode=production",
     "build:watch": "webpack --mode=development --watch",
@@ -28,7 +28,7 @@
     "react-dom": "^18.2.0",
     "react-markdown": "^10.1.0",
     "react-redux": "^9.2.0",
-    "react-router-dom": "^7.13.1",
+    "react-router-dom": "6.30.3",
     "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1"
   },
@@ -51,7 +51,7 @@
     "typescript": "^5.0.0",
     "webpack": "^5.88.0",
     "webpack-cli": "^5.1.0",
-    "webpack-dev-server": "^4.15.0"
+    "webpack-dev-server": "6.0.0"
   },
   "babel": {
     "presets": [

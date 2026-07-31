@@ -84,6 +84,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
+      - name: Audit production and build dependencies
+        run: npm audit --audit-level=high
       - name: Build
         run: npm run build
 
