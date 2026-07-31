@@ -2,6 +2,7 @@ from backend.config.Apps import SubApp
 from backend.apps.agents.agent_manager import agent_manager
 from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.agents.models import AgentConfig, ApprovalResponse
+from backend.apps.agents.orchestrator import orchestrator, mission_to_dict
 from contextlib import asynccontextmanager
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
@@ -14,10 +15,14 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def agents_lifespan():
     logger.info("Agents sub-app starting")
+    orchestrator.agent_manager = agent_manager
     await agent_manager.reconcile_on_startup()
     await agent_manager.restore_all_sessions()
     yield
     logger.info("Agents sub-app shutting down")
+    for mission in orchestrator.list_sessions():
+        if mission.status in {"decomposing", "running"}:
+            await orchestrator.cancel(mission.id)
     for session_id in list(agent_manager.tasks.keys()):
         await agent_manager.stop_agent(session_id)
     await agent_manager.persist_all_sessions()
@@ -208,6 +213,58 @@ async def resume_session(session_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"session": session.model_dump(mode="json")}
+
+
+# ---------------------------------------------------------------------------
+# Missions / multi-agent orchestration
+# ---------------------------------------------------------------------------
+
+
+@agents.router.get("/missions")
+async def list_missions():
+    return {"missions": [mission_to_dict(mission) for mission in orchestrator.list_sessions()]}
+
+
+@agents.router.post("/missions")
+async def create_mission(body: dict):
+    try:
+        mission = await orchestrator.create_session(
+            mission=str(body.get("mission", "")),
+            num_workers=int(body.get("workers", body.get("num_workers", 3))),
+            model=str(body.get("model", "sonnet")),
+            provider=body.get("provider"),
+            execution_mode=body.get("execution_mode", "parallel"),
+            target_directory=body.get("target_directory"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"mission": mission_to_dict(mission)}
+
+
+@agents.router.get("/missions/{mission_id}")
+async def get_mission(mission_id: str):
+    mission = orchestrator.get_session(mission_id)
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    return {"mission": mission_to_dict(mission)}
+
+
+@agents.router.post("/missions/{mission_id}/start")
+async def start_mission(mission_id: str):
+    try:
+        mission = await orchestrator.start(mission_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"mission": mission_to_dict(mission)}
+
+
+@agents.router.post("/missions/{mission_id}/cancel")
+async def cancel_mission(mission_id: str):
+    try:
+        mission = await orchestrator.cancel(mission_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"mission": mission_to_dict(mission)}
 
 
 # ---------------------------------------------------------------------------
