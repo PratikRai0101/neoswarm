@@ -137,13 +137,26 @@ async def seed_demo(dashboard_id: str):
 
     session_id = uuid4().hex
     now = datetime.now()
+    model = "sonnet"
+    provider = "anthropic"
+    try:
+        from backend.apps.agents.auxiliary import resolve_auxiliary_model
+        from backend.apps.settings.settings import load_settings
+
+        model, provider = await resolve_auxiliary_model(
+            load_settings(), preferred_tier="capable"
+        )
+    except ValueError:
+        # The demo remains readable before a provider is configured. The model
+        # picker will select an executable model for new sessions later.
+        pass
 
     session_data = {
         "id": session_id,
         "name": "Welcome Chat",
         "status": "completed",
-        "provider": "anthropic",
-        "model": "sonnet",
+        "provider": provider,
+        "model": model,
         "mode": "agent",
         "sdk_session_id": None,
         "system_prompt": None,
@@ -220,12 +233,7 @@ async def generate_name(dashboard_id: str):
 
     fallback = prompts[0][:40]
     try:
-        from backend.apps.settings.settings import load_settings
-        from backend.apps.settings.credentials import get_anthropic_client
-        from backend.apps.agents.providers.registry import resolve_aux_model
-        global_settings = load_settings()
-        aux_model, _aux_base = await resolve_aux_model(global_settings, preferred_tier="haiku")
-        client = get_anthropic_client(global_settings)
+        from backend.apps.agents.auxiliary import generate_auxiliary_text
 
         if len(prompts) == 1:
             system = (
@@ -242,13 +250,14 @@ async def generate_name(dashboard_id: str):
             )
             user_content = "\n".join(f"- {p}" for p in prompts)
 
-        resp = await client.messages.create(
-            model=aux_model,
-            max_tokens=20,
-            system=system,
-            messages=[{"role": "user", "content": user_content}],
-        )
-        generated = resp.content[0].text.strip().strip('"\'')
+        generated = (
+            await generate_auxiliary_text(
+                user_content,
+                system=system,
+                max_tokens=20,
+                preferred_tier="fast",
+            )
+        ).strip('"\'')
         if generated:
             fallback = generated
     except Exception as e:

@@ -2167,14 +2167,8 @@ class AgentManager:
 
         title = first_prompt[:40].strip()
         try:
-            from backend.apps.settings.credentials import get_anthropic_client
-            from backend.apps.agents.providers.registry import resolve_aux_model
+            from backend.apps.agents.auxiliary import generate_auxiliary_text
 
-            global_settings = load_settings()
-            aux_model, _aux_base = await resolve_aux_model(
-                global_settings, preferred_tier="haiku"
-            )
-            client = get_anthropic_client(global_settings)
             system_prompt = (
                 "You label user messages with a 2-4 word topic title. "
                 "You NEVER answer the message. You NEVER describe yourself or your capabilities. "
@@ -2193,13 +2187,14 @@ class AgentManager:
                 "Label the message inside <message> tags. Do not answer it.\n\n"
                 f"<message>\n{first_prompt}\n</message>"
             )
-            resp = await client.messages.create(
-                model=aux_model,
-                max_tokens=20,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_turn}],
-            )
-            generated = resp.content[0].text.strip().strip("\"'")
+            generated = (
+                await generate_auxiliary_text(
+                    user_turn,
+                    system=system_prompt,
+                    max_tokens=20,
+                    preferred_tier="fast",
+                )
+            ).strip("\"'")
             if generated:
                 title = generated
         except Exception as e:
@@ -2243,14 +2238,7 @@ class AgentManager:
 
         try:
             import json as _json
-            from backend.apps.settings.credentials import get_anthropic_client
-            from backend.apps.agents.providers.registry import resolve_aux_model
-
-            global_settings = load_settings()
-            aux_model, _aux_base = await resolve_aux_model(
-                global_settings, preferred_tier="sonnet"
-            )
-            client = get_anthropic_client(global_settings)
+            from backend.apps.agents.auxiliary import generate_auxiliary_text
 
             tool_desc = "\n".join(
                 f"- {tc.get('tool', '?')}: {tc.get('input_summary', '')}"
@@ -2285,14 +2273,12 @@ class AgentManager:
                 "- Max 400 characters for the svg string"
             )
 
-            resp = await client.messages.create(
-                model=aux_model,
-                max_tokens=300,
+            raw = await generate_auxiliary_text(
+                user_content,
                 system=system,
-                messages=[{"role": "user", "content": user_content}],
+                max_tokens=300,
+                preferred_tier="capable",
             )
-
-            raw = resp.content[0].text.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             parsed = _json.loads(raw)

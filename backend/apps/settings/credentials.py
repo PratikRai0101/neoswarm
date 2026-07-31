@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import anthropic
     from backend.apps.settings.models import AppSettings
 
 
@@ -75,13 +74,3 @@ def get_provider_credentials(settings: AppSettings, provider: str) -> dict[str, 
             return {"api_key": cp.api_key, "base_url": cp.base_url}
 
     raise ValueError(f"No credentials for provider: {provider}")
-
-
-def get_anthropic_client(settings: AppSettings) -> anthropic.AsyncAnthropic:
-    """Return a configured AsyncAnthropic client."""
-    import anthropic
-
-    if settings.anthropic_api_key:
-        return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-
-    raise ValueError("No AI provider configured. Set an Anthropic API key.")

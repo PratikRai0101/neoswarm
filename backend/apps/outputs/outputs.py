@@ -20,24 +20,6 @@ from backend.apps.settings.settings import load_settings
 
 logger = logging.getLogger(__name__)
 
-MODEL_MAP = {
-    "sonnet": "claude-sonnet-4-20250514",
-    "opus": "claude-opus-4-20250514",
-    "haiku": "claude-haiku-4-5-20251001",
-}
-
-
-def _resolve_model(short_name: str) -> str:
-    return MODEL_MAP.get(short_name, short_name)
-
-
-def _get_anthropic_client():
-    """Create an AsyncAnthropic client using the API key from app settings."""
-    from backend.apps.settings.credentials import get_anthropic_client
-    settings = load_settings()
-    return get_anthropic_client(settings)
-
-
 def _validate_against_schema(data: dict, schema: dict) -> str | None:
     """Validate *data* against *schema*. Return an error string or None."""
     try:
@@ -351,16 +333,6 @@ Return ONLY valid JSON with these keys. No markdown fences, no extra text.\
 @outputs.router.post("/vibe-code")
 async def vibe_code(body: VibeCodeRequest):
     """Use an LLM to generate or iterate on Output code from a natural language prompt."""
-    try:
-        import anthropic
-    except ImportError:
-        return {
-            "message": "anthropic SDK not installed. Install with: pip install anthropic",
-            "frontend_code": body.current_frontend_code,
-            "backend_code": body.current_backend_code,
-            "input_schema": body.current_schema,
-        }
-
     context_parts = []
     if body.current_frontend_code:
         context_parts.append(f"Current frontend code:\n```html\n{body.current_frontend_code}\n```")
@@ -377,25 +349,15 @@ async def vibe_code(body: VibeCodeRequest):
     if context_parts:
         user_message = "\n\n".join(context_parts) + "\n\nUser request: " + body.prompt
 
-    from backend.apps.agents.providers.registry import resolve_aux_model
+    from backend.apps.agents.auxiliary import generate_auxiliary_text
+
     try:
-        aux_model, _aux_base = await resolve_aux_model(load_settings(), preferred_tier="sonnet")
-    except ValueError as e:
-        return {
-            "message": f"Error: {str(e)}",
-            "frontend_code": body.current_frontend_code,
-            "backend_code": body.current_backend_code,
-            "input_schema": body.current_schema,
-        }
-    client = _get_anthropic_client()
-    try:
-        resp = await client.messages.create(
-            model=aux_model,
-            max_tokens=8000,
+        raw = await generate_auxiliary_text(
+            user_message,
             system=VIBE_CODE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            max_tokens=8000,
+            preferred_tier="capable",
         )
-        raw = resp.content[0].text.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):
@@ -440,41 +402,19 @@ Every required field must be present. Use realistic, meaningful data.\
 @outputs.router.post("/auto-run")
 async def auto_run_output(body: AutoRunRequest):
     """Use an LLM to generate input data matching the schema, then optionally execute backend code."""
-    try:
-        import anthropic
-    except ImportError:
-        return {"error": "anthropic SDK not installed", "input_data": None, "backend_result": None}
-
     schema_str = json.dumps(body.input_schema, indent=2)
     user_message = f"Schema:\n```json\n{schema_str}\n```\n\nGenerate data for: {body.prompt}"
 
-    # Resolve body.model via the registry so non-Anthropic selections
-    # are routed correctly.
-    # If body.model is unset or unknown, fall back to whichever aux model
-    # is available (prefers Claude, else any connected subscription).
-    from backend.apps.agents.providers.registry import (
-        _find_builtin_model,
-        resolve_model_id_for_sdk,
-        resolve_aux_model,
-    )
-    settings = load_settings()
-    if body.model and _find_builtin_model(body.model) is not None:
-        api_model = resolve_model_id_for_sdk(body.model, settings)
-    else:
-        try:
-            api_model, _ = await resolve_aux_model(settings, preferred_tier="haiku")
-        except ValueError as e:
-            return {"error": str(e), "input_data": None, "backend_result": None}
+    from backend.apps.agents.auxiliary import generate_auxiliary_text
 
-    client = _get_anthropic_client()
     try:
-        resp = await client.messages.create(
-            model=api_model,
-            max_tokens=4000,
+        raw = await generate_auxiliary_text(
+            user_message,
             system=AUTO_RUN_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            max_tokens=4000,
+            preferred_tier="fast",
+            model=body.model or None,
         )
-        raw = resp.content[0].text.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):

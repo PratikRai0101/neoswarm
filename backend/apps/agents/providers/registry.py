@@ -292,20 +292,6 @@ def resolve_model_id_for_sdk(short_name: str, settings: AppSettings) -> str:
     return entry.get("model_id", short_name)
 
 
-async def resolve_aux_model(
-    settings: AppSettings, preferred_tier: str = "haiku"
-) -> tuple[str, str | None]:
-    """Pick the cheapest available model for auxiliary LLM calls."""
-    haiku = "claude-haiku-4-5-20251001"
-    sonnet = "claude-sonnet-4-20250514"
-    model = haiku if preferred_tier == "haiku" else sonnet
-
-    if getattr(settings, "anthropic_api_key", None):
-        return (model, None)
-
-    raise ValueError("No AI provider configured. Set an Anthropic API key in Settings.")
-
-
 # ---------------------------------------------------------------------------
 # Provider factory
 # ---------------------------------------------------------------------------
