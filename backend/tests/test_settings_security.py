@@ -5,6 +5,7 @@ import stat
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import HTTPException
 
 from backend.apps.settings.models import AppSettings, CustomProvider
 import backend.apps.settings.settings as settings_api
@@ -138,6 +139,54 @@ def test_custom_provider_keys_use_the_keychain(isolated_settings_file, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_renaming_custom_provider_preserves_and_moves_credential(
+    isolated_settings_file, monkeypatch
+):
+    secure_values = {}
+    monkeypatch.setattr(settings_api, "get_secret", secure_values.get)
+    monkeypatch.setattr(
+        settings_api,
+        "set_secret",
+        lambda name, value: secure_values.__setitem__(name, value) is None,
+    )
+
+    def delete(name):
+        secure_values.pop(name, None)
+        return True
+
+    monkeypatch.setattr(settings_api, "delete_secret", delete)
+    settings_api._save_settings(
+        AppSettings(
+            custom_providers=[
+                CustomProvider(
+                    name="Old Name",
+                    base_url="https://models.example/v1",
+                    api_key="private-key",
+                    models=[{"value": "private-model"}],
+                )
+            ]
+        )
+    )
+
+    await settings_api.update_settings(
+        {
+            "custom_providers": [
+                {
+                    "name": "New Name",
+                    "base_url": "https://models.example/v1",
+                    "api_key": settings_api.SECRET_UNCHANGED,
+                    "models": [{"value": "private-model"}],
+                }
+            ]
+        }
+    )
+
+    assert "custom_provider:Old Name" not in secure_values
+    assert secure_values["custom_provider:New Name"] == "private-key"
+    assert settings_api.load_settings().custom_providers[0].api_key == "private-key"
+
+
+@pytest.mark.asyncio
 async def test_explicit_clear_deletes_keychain_credential(
     isolated_settings_file, monkeypatch
 ):
@@ -166,6 +215,27 @@ async def test_explicit_clear_deletes_keychain_credential(
 
 def test_new_installations_default_to_analytics_opt_out():
     assert AppSettings().analytics_opt_in is False
+
+
+@pytest.mark.asyncio
+async def test_invalid_custom_provider_is_rejected_as_a_client_error(
+    isolated_settings_file,
+):
+    with pytest.raises(HTTPException) as exc_info:
+        await settings_api.update_settings(
+            {
+                "custom_providers": [
+                    {
+                        "name": "",
+                        "base_url": "not-a-url",
+                        "api_key": "",
+                        "models": [],
+                    }
+                ]
+            }
+        )
+
+    assert getattr(exc_info.value, "status_code", None) == 422
 
 
 @pytest.mark.asyncio

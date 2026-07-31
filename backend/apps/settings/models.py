@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Any
+from urllib.parse import urlparse
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are a personal AI assistant running inside NeoSwarm.\n\n"
@@ -76,3 +77,30 @@ class CustomProvider(BaseModel):
     base_url: str
     api_key: str = ""
     models: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Custom provider name is required")
+        return value
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Custom provider base URL must be HTTP(S)")
+        return value
+
+    @field_validator("models")
+    @classmethod
+    def validate_models(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not value:
+            raise ValueError("Custom provider requires at least one model")
+        for model in value:
+            if not str(model.get("value", model.get("id", ""))).strip():
+                raise ValueError("Every custom provider model requires an ID")
+        return value

@@ -39,7 +39,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import Collapse from '@mui/material/Collapse';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
-import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, DEFAULT_SYSTEM_PROMPT, SECRET_UNCHANGED } from '@/shared/state/settingsSlice';
+import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, CustomProvider, DEFAULT_SYSTEM_PROMPT, SECRET_UNCHANGED } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError, setInstalling } from '@/shared/state/updateSlice';
 import { fetchModes } from '@/shared/state/modesSlice';
@@ -368,6 +368,32 @@ const Settings: React.FC = () => {
   const [recordingShortcut, setRecordingShortcut] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [showApiHelp, setShowApiHelp] = useState(false);
+
+  const updateCustomProvider = (index: number, patch: Partial<CustomProvider>) => {
+    const providers = [...(form.custom_providers ?? [])];
+    providers[index] = { ...providers[index], ...patch };
+    setForm({ ...form, custom_providers: providers });
+  };
+
+  const updateCustomModel = (
+    providerIndex: number,
+    modelIndex: number,
+    patch: Partial<CustomProvider['models'][number]>,
+  ) => {
+    const providers = [...(form.custom_providers ?? [])];
+    const models = [...providers[providerIndex].models];
+    models[modelIndex] = { ...models[modelIndex], ...patch };
+    providers[providerIndex] = { ...providers[providerIndex], models };
+    setForm({ ...form, custom_providers: providers });
+  };
+
+  const customProvidersValid = (form.custom_providers ?? []).every(
+    (provider) =>
+      provider.name.trim().length > 0 &&
+      /^https?:\/\//i.test(provider.base_url.trim()) &&
+      provider.models.length > 0 &&
+      provider.models.every((model) => model.value.trim().length > 0),
+  );
 
   useEffect(() => {
     dispatch(fetchModes());
@@ -1262,6 +1288,148 @@ const Settings: React.FC = () => {
             </Box>
           </Box>
 
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
+            <Box>
+              <Typography sx={{ fontSize: '0.7rem', color: c.text.ghost, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                Custom OpenAI-Compatible Providers
+              </Typography>
+              <Typography sx={{ ...descSx, mt: 0.5 }}>
+                Connect local gateways or hosted endpoints that implement the OpenAI chat-completions interface.
+              </Typography>
+            </Box>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                const providers = form.custom_providers ?? [];
+                setForm({
+                  ...form,
+                  custom_providers: [
+                    ...providers,
+                    { name: '', base_url: '', api_key: '', models: [{ value: '', label: '', context_window: 128000 }] },
+                  ],
+                });
+              }}
+              sx={{ textTransform: 'none', fontSize: '0.72rem', color: c.accent.primary, borderColor: c.border.medium, whiteSpace: 'nowrap' }}
+            >
+              + Add provider
+            </Button>
+          </Box>
+
+          {(form.custom_providers ?? []).map((provider, providerIndex) => (
+            <Box
+              key={`${provider.name}-${providerIndex}`}
+              sx={{ p: 1.5, borderRadius: `${c.radius.md}px`, border: `1px solid ${c.border.subtle}`, display: 'flex', flexDirection: 'column', gap: 1.25 }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={labelSx}>{provider.name || 'New provider'}</Typography>
+                  {provider.api_key ? (
+                    <Typography sx={{ fontSize: '0.6rem', fontWeight: 600, color: c.status.success, bgcolor: `${c.status.success}15`, px: 0.75, py: 0.15, borderRadius: '3px' }}>CONNECTED</Typography>
+                  ) : null}
+                </Box>
+                <IconButton
+                  size="small"
+                  aria-label={`Remove ${provider.name || 'custom provider'}`}
+                  onClick={() => setForm({
+                    ...form,
+                    custom_providers: (form.custom_providers ?? []).filter((_, index) => index !== providerIndex),
+                  })}
+                  sx={{ color: c.text.ghost, '&:hover': { color: c.status.error } }}
+                >
+                  <CloseIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 0.7fr) minmax(220px, 1.3fr)', gap: 1 }}>
+                <TextField
+                  label="Provider name"
+                  value={provider.name}
+                  onChange={(event) => updateCustomProvider(providerIndex, { name: event.target.value })}
+                  size="small"
+                  required
+                  sx={fieldSx}
+                />
+                <TextField
+                  label="Base URL"
+                  value={provider.base_url}
+                  onChange={(event) => updateCustomProvider(providerIndex, { base_url: event.target.value })}
+                  placeholder="https://example.com/v1"
+                  size="small"
+                  required
+                  error={!!provider.base_url && !/^https?:\/\//i.test(provider.base_url)}
+                  sx={{ ...fieldSx, '& .MuiOutlinedInput-input': { fontFamily: c.font.mono } }}
+                />
+              </Box>
+
+              <TextField
+                label="API key"
+                type={showApiKey ? 'text' : 'password'}
+                value={provider.api_key === SECRET_UNCHANGED ? '' : provider.api_key}
+                onChange={(event) => updateCustomProvider(providerIndex, { api_key: event.target.value })}
+                placeholder={provider.api_key === SECRET_UNCHANGED ? 'Saved securely — enter to replace' : 'Optional for local endpoints'}
+                size="small"
+                sx={{ ...fieldSx, '& .MuiOutlinedInput-input': { fontFamily: c.font.mono } }}
+              />
+
+              <Typography sx={{ fontSize: '0.68rem', color: c.text.tertiary, fontWeight: 600 }}>Models</Typography>
+              {provider.models.map((providerModel, modelIndex) => (
+                <Box key={`${providerIndex}-${modelIndex}`} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 110px 28px', gap: 0.75, alignItems: 'center' }}>
+                  <TextField
+                    label="Model ID"
+                    value={providerModel.value}
+                    onChange={(event) => updateCustomModel(providerIndex, modelIndex, { value: event.target.value })}
+                    size="small"
+                    required
+                    sx={{ ...fieldSx, '& .MuiOutlinedInput-input': { fontFamily: c.font.mono } }}
+                  />
+                  <TextField
+                    label="Label"
+                    value={providerModel.label}
+                    onChange={(event) => updateCustomModel(providerIndex, modelIndex, { label: event.target.value })}
+                    size="small"
+                    sx={fieldSx}
+                  />
+                  <TextField
+                    label="Context"
+                    type="number"
+                    value={providerModel.context_window ?? 128000}
+                    onChange={(event) => updateCustomModel(providerIndex, modelIndex, { context_window: Math.max(1, Number(event.target.value) || 128000) })}
+                    size="small"
+                    inputProps={{ min: 1 }}
+                    sx={fieldSx}
+                  />
+                  <IconButton
+                    size="small"
+                    aria-label="Remove model"
+                    disabled={provider.models.length === 1}
+                    onClick={() => updateCustomProvider(providerIndex, {
+                      models: provider.models.filter((_, index) => index !== modelIndex),
+                    })}
+                    sx={{ color: c.text.ghost, '&:hover': { color: c.status.error } }}
+                  >
+                    <CloseIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </Box>
+              ))}
+              <Button
+                size="small"
+                onClick={() => updateCustomProvider(providerIndex, {
+                  models: [...provider.models, { value: '', label: '', context_window: 128000 }],
+                })}
+                sx={{ alignSelf: 'flex-start', textTransform: 'none', fontSize: '0.7rem', color: c.accent.primary }}
+              >
+                + Add model
+              </Button>
+            </Box>
+          ))}
+
+          {!customProvidersValid && (form.custom_providers ?? []).length > 0 && (
+            <Alert severity="warning" sx={{ fontSize: '0.72rem' }}>
+              Each custom provider needs a name, an HTTP(S) base URL, and at least one model ID.
+            </Alert>
+          )}
+
       </Box>
       ) : activeTab === 'usage' ? (
       <Box sx={{ display: 'flex', flexDirection: 'column', pt: 2.5, pb: 1, animation: 'fadeIn 0.2s ease', '@keyframes fadeIn': { from: { opacity: 0 }, to: { opacity: 1 } } }}>
@@ -1286,7 +1454,7 @@ const Settings: React.FC = () => {
           variant="contained"
           startIcon={<SaveIcon sx={{ fontSize: 16 }} />}
           onClick={handleSave}
-          disabled={!hasChanges}
+          disabled={!hasChanges || !customProvidersValid}
           sx={{
             bgcolor: c.accent.primary,
             '&:hover': { bgcolor: c.accent.pressed },

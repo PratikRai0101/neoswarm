@@ -5,7 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import HTTPException, Query, UploadFile, File
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Optional
 
 from backend.config.Apps import SubApp
@@ -199,13 +199,19 @@ def _merged_settings(current: AppSettings, patch: dict) -> AppSettings:
         if key == "custom_providers" and isinstance(value, list):
             current_providers = {provider.name: provider for provider in current.custom_providers}
             value = [dict(provider) if isinstance(provider, dict) else provider for provider in value]
-            for provider in value:
+            for index, provider in enumerate(value):
                 if not isinstance(provider, dict) or provider.get("api_key") != SECRET_UNCHANGED:
                     continue
                 existing = current_providers.get(provider.get("name"))
+                if existing is None and index < len(current.custom_providers):
+                    # Preserve the credential when an existing provider is renamed.
+                    existing = current.custom_providers[index]
                 provider["api_key"] = existing.api_key if existing else ""
         merged[key] = value
-    return AppSettings(**merged)
+    try:
+        return AppSettings(**merged)
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail=error.errors(include_url=False)) from error
 
 
 @settings.router.get("")
