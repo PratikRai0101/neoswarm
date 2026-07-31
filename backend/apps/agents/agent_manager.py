@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import re
-import sys
 import time
 from datetime import datetime
 from uuid import uuid4
@@ -1152,16 +1151,18 @@ class AgentManager:
             )
 
             if not _browser_all_denied:
-                browser_agent_server_path = os.path.join(
-                    os.path.dirname(__file__), "browser_agent_mcp_server.py"
+                from backend.config.runtime import internal_server_command
+
+                browser_command, browser_args = internal_server_command(
+                    "browser-agent-mcp"
                 )
                 backend_port = os.environ.get("NEOSWARM_PORT", "8324")
                 pre_selected_bids = self._get_pre_selected_browser_ids(
                     session.dashboard_id
                 )
                 mcp_servers["neoswarm-browser-agent"] = {
-                    "command": sys.executable,
-                    "args": [browser_agent_server_path],
+                    "command": browser_command,
+                    "args": browser_args,
                     "env": {
                         "NEOSWARM_PORT": backend_port,
                         "NEOSWARM_AGENT_MODEL": session.model,
@@ -1181,13 +1182,15 @@ class AgentManager:
             )
 
             if not _invoke_all_denied:
-                invoke_agent_server_path = os.path.join(
-                    os.path.dirname(__file__), "invoke_agent_mcp_server.py"
+                from backend.config.runtime import internal_server_command
+
+                invoke_command, invoke_args = internal_server_command(
+                    "invoke-agent-mcp"
                 )
                 backend_port = os.environ.get("NEOSWARM_PORT", "8324")
                 mcp_servers["neoswarm-invoke-agent"] = {
-                    "command": sys.executable,
-                    "args": [invoke_agent_server_path],
+                    "command": invoke_command,
+                    "args": invoke_args,
                     "env": {
                         "NEOSWARM_PORT": backend_port,
                         "NEOSWARM_PARENT_SESSION_ID": session.id,

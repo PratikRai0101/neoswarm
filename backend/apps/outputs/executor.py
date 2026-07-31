@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import sys
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -38,8 +37,14 @@ async def execute_backend_code(code: str, input_data: dict) -> BackendExecResult
     )
     wrapper = preamble + code + postamble
 
+    from backend.config.runtime import is_frozen, isolated_python_command
+
+    command, stdin_payload = isolated_python_command(
+        code if is_frozen() else wrapper,
+        input_data,
+    )
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-c", wrapper,
+        *command,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -47,7 +52,7 @@ async def execute_backend_code(code: str, input_data: dict) -> BackendExecResult
 
     try:
         stdout, stderr = await asyncio.wait_for(
-            proc.communicate(input=json.dumps(input_data).encode()),
+            proc.communicate(input=stdin_payload),
             timeout=TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
