@@ -13,6 +13,7 @@ import dashboardsReducer from './dashboardsSlice';
 import updateReducer from './updateSlice';
 import analyticsReducer from './analyticsSlice';
 import modelsReducer from './modelsSlice';
+import missionsReducer from './missionsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -30,6 +31,7 @@ export const store = configureStore({
     update: updateReducer,
     analytics: analyticsReducer,
     models: modelsReducer,
+    missions: missionsReducer,
   },
 });
 
