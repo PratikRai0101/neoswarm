@@ -3,8 +3,10 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
+import Checkbox from '@mui/material/Checkbox';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import LinearProgress from '@mui/material/LinearProgress';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
@@ -68,6 +70,7 @@ const Missions: React.FC = () => {
   const [executionMode, setExecutionMode] = useState<'parallel' | 'sequential'>('parallel');
   const [modelKey, setModelKey] = useState('');
   const [targetDirectory, setTargetDirectory] = useState(defaultFolder || '');
+  const [isolateWorkers, setIsolateWorkers] = useState(false);
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
 
   const modelChoices = useMemo<ModelChoice[]>(
@@ -131,6 +134,7 @@ const Missions: React.FC = () => {
         provider: choice.provider,
         execution_mode: executionMode,
         target_directory: targetDirectory.trim() || null,
+        isolate_workers: isolateWorkers,
       }),
     );
     if (!createMission.fulfilled.match(created)) return;
@@ -274,6 +278,22 @@ const Missions: React.FC = () => {
             disabled={creating}
             sx={{ mt: 2 }}
           />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={isolateWorkers}
+                onChange={(event) => setIsolateWorkers(event.target.checked)}
+                disabled={creating || !targetDirectory.trim()}
+              />
+            }
+            label="Give each worker an isolated git worktree"
+            sx={{ mt: 1, '& .MuiFormControlLabel-label': { fontSize: '0.8rem', color: c.text.secondary } }}
+          />
+          {isolateWorkers && (
+            <Typography sx={{ ml: 4, mt: -0.5, fontSize: '0.72rem', color: c.text.tertiary }}>
+              Worktrees are created under &lt;repository&gt;/.worktrees and preserved when they contain uncommitted changes.
+            </Typography>
+          )}
           {modelChoices.length === 0 && (
             <Typography sx={{ mt: 1.5, fontSize: '0.8rem', color: c.status.warning }}>
               Configure a model provider in Settings or start Ollama before launching a mission.
@@ -370,7 +390,7 @@ const MissionDetail: React.FC<{ mission?: Mission; onCancel: (missionId: string)
             {mission.mission}
           </Typography>
           <Typography sx={{ color: c.text.tertiary, fontSize: '0.78rem' }}>
-            {mission.execution_mode} · {mission.provider}/{mission.model} · {elapsed(mission.created_at, mission.completed_at)}
+            {mission.execution_mode} · {mission.provider}/{mission.model} · {mission.isolate_workers ? 'isolated worktrees · ' : ''}{elapsed(mission.created_at, mission.completed_at)}
           </Typography>
         </Box>
         {active && (

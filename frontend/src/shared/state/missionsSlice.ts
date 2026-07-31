@@ -40,6 +40,7 @@ export interface Mission {
   provider: string | null;
   execution_mode: 'parallel' | 'sequential';
   target_directory: string | null;
+  isolate_workers: boolean;
   status: MissionStatus;
   created_at: string;
   completed_at: string | null;
@@ -56,6 +57,7 @@ export interface CreateMissionInput {
   provider: string;
   execution_mode: 'parallel' | 'sequential';
   target_directory?: string | null;
+  isolate_workers?: boolean;
 }
 
 interface MissionsState {

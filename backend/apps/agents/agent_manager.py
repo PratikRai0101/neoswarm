@@ -460,6 +460,13 @@ class AgentManager:
             effective_cwd = os.path.join(effective_cwd, session_id)
 
         os.makedirs(effective_cwd, exist_ok=True)
+        source_directory = effective_cwd
+        worktree = None
+        if config.use_worktree:
+            from backend.apps.agents.worktrees import worktree_manager
+
+            worktree = await worktree_manager.create(source_directory, session_id)
+            effective_cwd = worktree.path
 
         from backend.apps.agents.providers.registry import resolve_provider_name
 
@@ -473,6 +480,10 @@ class AgentManager:
             allowed_tools=tools,
             max_turns=config.max_turns,
             cwd=effective_cwd,
+            target_directory=source_directory,
+            worktree_path=worktree.path if worktree else None,
+            worktree_repo_root=worktree.repo_root if worktree else None,
+            branch_name=worktree.branch if worktree else None,
             dashboard_id=config.dashboard_id,
         )
         self.sessions[session_id] = session
@@ -1938,8 +1949,30 @@ class AgentManager:
         )
         self.tasks[session_id] = task
 
-    async def stop_agent(self, session_id: str):
-        """Stop a running agent and all its browser-agent children."""
+    async def _remove_session_worktree(
+        self, session: AgentSession, *, force: bool = False
+    ) -> None:
+        if not (
+            session.worktree_path
+            and session.worktree_repo_root
+            and session.branch_name
+        ):
+            return
+        from backend.apps.agents.worktrees import worktree_manager
+
+        await worktree_manager.remove(
+            session.worktree_repo_root,
+            session.worktree_path,
+            session.branch_name,
+            force=force,
+        )
+        session.cwd = session.target_directory
+        session.worktree_path = None
+        session.worktree_repo_root = None
+        session.branch_name = None
+
+    async def stop_agent(self, session_id: str, remove_worktree: bool = False):
+        """Stop a running agent and optionally remove its isolated worktree."""
         # Stop children first so browser agents get cancelled before parent
         children = [
             s
@@ -1982,6 +2015,9 @@ class AgentManager:
                 await task
             except asyncio.CancelledError:
                 pass
+
+        if session and remove_worktree:
+            await self._remove_session_worktree(session, force=True)
 
     def handle_approval(self, request_id: str, decision: dict):
         """Resolve a pending HITL approval."""
@@ -2436,9 +2472,14 @@ class AgentManager:
         self.tasks.pop(session_id, None)
         logger.info(f"Session {session_id} closed and persisted")
 
-    async def delete_session(self, session_id: str) -> None:
-        """Permanently delete a session: remove from memory and JSON file.
-        Also stops browser-agent children first."""
+    async def delete_session(
+        self, session_id: str, *, force_worktree: bool = False
+    ) -> None:
+        """Permanently delete a session and its clean, NeoSwarm-owned worktree.
+
+        Dirty worktrees block deletion unless ``force_worktree`` is explicitly
+        requested, so deleting chat history cannot silently discard code.
+        """
         children = [
             s
             for s in self.sessions.values()
@@ -2454,6 +2495,13 @@ class AgentManager:
                 await task
             except asyncio.CancelledError:
                 pass
+
+        session = self.sessions.get(session_id)
+        if not session:
+            persisted = _load_session_data(session_id)
+            session = AgentSession(**persisted) if persisted else None
+        if session:
+            await self._remove_session_worktree(session, force=force_worktree)
 
         self.sessions.pop(session_id, None)
         self.tasks.pop(session_id, None)

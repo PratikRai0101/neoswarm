@@ -11,7 +11,8 @@ class AgentConfig(BaseModel):
     system_prompt: Optional[str] = None
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "AskUserQuestion"])
     max_turns: Optional[int] = None
-    target_directory: Optional[str] = None  # if None, uses repo root
+    target_directory: Optional[str] = None  # if None, uses configured default
+    use_worktree: bool = False
     dashboard_id: Optional[str] = None
 
 class ApprovalRequest(BaseModel):
@@ -64,6 +65,10 @@ class AgentSession(BaseModel):
     allowed_tools: list[str] = Field(default_factory=list)
     max_turns: Optional[int] = None
     cwd: Optional[str] = None
+    target_directory: Optional[str] = None
+    worktree_path: Optional[str] = None
+    worktree_repo_root: Optional[str] = None
+    branch_name: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     closed_at: Optional[datetime] = None
     cost_usd: float = 0.0

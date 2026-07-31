@@ -85,6 +85,7 @@ export interface AgentConfig {
   allowed_tools?: string[];
   max_turns?: number;
   target_directory?: string;
+  use_worktree?: boolean;
   dashboard_id?: string;
 }
 

@@ -3,6 +3,7 @@ from backend.apps.agents.agent_manager import agent_manager
 from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.agents.models import AgentConfig, ApprovalResponse
 from backend.apps.agents.orchestrator import orchestrator, mission_to_dict
+from backend.apps.agents.worktrees import WorktreeDirtyError, WorktreeError
 from contextlib import asynccontextmanager
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
@@ -49,7 +50,10 @@ async def get_session(session_id: str):
 
 @agents.router.post("/launch")
 async def launch_agent(config: AgentConfig):
-    session = await agent_manager.launch_agent(config)
+    try:
+        session = await agent_manager.launch_agent(config)
+    except WorktreeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return {"session_id": session.id, "session": session.model_dump(mode="json")}
 
 
@@ -74,8 +78,10 @@ async def send_message(session_id: str, body: dict):
 
 
 @agents.router.post("/sessions/{session_id}/stop")
-async def stop_agent(session_id: str):
-    await agent_manager.stop_agent(session_id)
+async def stop_agent(session_id: str, body: dict = {}):
+    await agent_manager.stop_agent(
+        session_id, remove_worktree=bool(body.get("remove_worktree", False))
+    )
     return {"ok": True}
 
 
@@ -183,8 +189,13 @@ async def close_session(session_id: str):
 
 
 @agents.router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
-    await agent_manager.delete_session(session_id)
+async def delete_session(session_id: str, force_worktree: bool = False):
+    try:
+        await agent_manager.delete_session(
+            session_id, force_worktree=force_worktree
+        )
+    except WorktreeDirtyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     return {"ok": True}
 
 
@@ -235,6 +246,7 @@ async def create_mission(body: dict):
             provider=body.get("provider"),
             execution_mode=body.get("execution_mode", "parallel"),
             target_directory=body.get("target_directory"),
+            isolate_workers=bool(body.get("isolate_workers", False)),
         )
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))

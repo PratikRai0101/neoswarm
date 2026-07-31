@@ -66,6 +66,7 @@ class OrchestratorSession:
     provider: str | None = None
     execution_mode: Literal["parallel", "sequential"] = "parallel"
     target_directory: str | None = None
+    isolate_workers: bool = False
     decomposed_tasks: list[SubTask] = field(default_factory=list)
     workers: list[Worker] = field(default_factory=list)
     status: str = "pending"  # pending, decomposing, running, completed, failed, cancelled
@@ -84,6 +85,7 @@ def mission_to_dict(session: OrchestratorSession) -> dict[str, Any]:
         "provider": session.provider,
         "execution_mode": session.execution_mode,
         "target_directory": session.target_directory,
+        "isolate_workers": session.isolate_workers,
         "status": session.status,
         "created_at": session.created_at.isoformat(),
         "completed_at": session.completed_at.isoformat()
@@ -126,6 +128,7 @@ class Orchestrator:
         provider: str | None = None,
         execution_mode: Literal["parallel", "sequential"] = "parallel",
         target_directory: str | None = None,
+        isolate_workers: bool = False,
     ) -> OrchestratorSession:
         mission = mission.strip()
         if not mission:
@@ -141,6 +144,7 @@ class Orchestrator:
             provider=provider,
             execution_mode=execution_mode,
             target_directory=target_directory,
+            isolate_workers=isolate_workers,
             workers=[
                 Worker(id=uuid4().hex, name=f"Worker-{index + 1}", model=model)
                 for index in range(worker_count)
@@ -296,6 +300,7 @@ class Orchestrator:
                     provider=session.provider,
                     mode="agent",
                     target_directory=session.target_directory,
+                    use_worktree=session.isolate_workers,
                 )
             )
             worker.session_id = worker_session.id
