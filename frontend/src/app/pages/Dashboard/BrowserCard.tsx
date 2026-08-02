@@ -42,6 +42,11 @@ import {
 import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { getActionLabel } from '@/shared/browserCommandHandler';
 import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
+import {
+  isTauriRuntime,
+  removeTauriBrowserWebviews,
+  syncTauriBrowserWebviews,
+} from '@/shared/tauriBrowser';
 import BrowserAgentOverlay from './BrowserAgentOverlay';
 import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
 import { useElementSelection } from '@/app/components/ElementSelectionContext';
@@ -70,6 +75,7 @@ const HANDLE_DEFS: { dir: ResizeDir; sx: Record<string, any> }[] = [
 ];
 
 const isElectron = navigator.userAgent.includes('Electron');
+const isTauri = isTauriRuntime();
 
 const chromeUserAgent = navigator.userAgent
   .replace(/\s*Electron\/\S+/, '')
@@ -164,6 +170,7 @@ const BrowserCard: React.FC<Props> = ({
   const webviewMap = useRef<Map<string, WebviewElement>>(new Map());
   const initializedTabs = useRef(new Set<string>());
   const tabBarRef = useRef<HTMLDivElement>(null);
+  const browserBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setRegistryActiveTab(browserId, activeTabId);
@@ -239,6 +246,42 @@ const BrowserCard: React.FC<Props> = ({
     return () => cleanups.forEach((fn) => fn());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabIdKey, browserId, dispatch, updateTabLocal]);
+
+  useEffect(() => {
+    return () => {
+      if (isTauri) void removeTauriBrowserWebviews(browserId);
+    };
+  }, [browserId]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    const body = browserBodyRef.current;
+    if (!body) return;
+    let disposed = false;
+
+    const sync = () => {
+      if (disposed) return;
+      const rect = body.getBoundingClientRect();
+      void syncTauriBrowserWebviews(
+        browserId,
+        tabs.map((tab) => ({ id: tab.id, url: tab.url })),
+        activeTabId,
+        { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      ).catch((error) => {
+        if (!disposed) console.warn('Tauri browser webview sync failed:', error);
+      });
+    };
+
+    sync();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null;
+    observer?.observe(body);
+    window.addEventListener('resize', sync);
+    return () => {
+      disposed = true;
+      observer?.disconnect();
+      window.removeEventListener('resize', sync);
+    };
+  }, [browserId, tabs, activeTabId, tabIdKey, cardX, cardY, cardWidth, cardHeight, zoom, panX, panY]);
 
   // ---- Navigation (active tab) ----
   const navigate = useCallback((targetUrl: string) => {
@@ -1001,7 +1044,7 @@ const BrowserCard: React.FC<Props> = ({
       )}
 
       {/* ====== Browser body — multiple webviews stacked ====== */}
-      <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <Box ref={browserBodyRef} sx={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {isElementSelectMode && (
           <Box sx={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none' }} />
         )}
@@ -1034,6 +1077,8 @@ const BrowserCard: React.FC<Props> = ({
               }}
             />
           ))
+        ) : isTauri ? (
+          <Box sx={{ width: '100%', height: '100%', bgcolor: '#111318' }} />
         ) : (
           <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
             <iframe
@@ -1058,7 +1103,7 @@ const BrowserCard: React.FC<Props> = ({
               }}
             >
               <Typography sx={{ fontSize: '0.68rem', color: c.status.warning }}>
-                iframe mode — some sites may not load. Use the Electron build for full browser support.
+                iframe mode — some sites may not load. Use the desktop build for full browser support.
               </Typography>
             </Box>
           </Box>
