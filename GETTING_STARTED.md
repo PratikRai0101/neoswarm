@@ -97,7 +97,9 @@ npm exec tauri -- dev --config ../src-tauri/tauri.conf.json
 The current release bundle targets macOS DMG packages for Intel and Apple
 Silicon. Release builds automatically create and bundle a self-contained
 backend executable, so end users do not need Python or a virtual environment.
-The build machine still needs the backend venv described above.
+The build machine still needs the backend venv described above. Native desktop
+control also requires NeoSwarm to have Accessibility and Screen Recording
+permissions in macOS System Settings.
 
 The **Memory** workspace stores user-approved durable context locally. The
 **Automations** workspace creates interval or one-time agent runs and also
