@@ -10,6 +10,8 @@ setup(
         "click>=8.0",
         "httpx>=0.27",
         "rich>=13.0",
+        "textual>=0.47.1",
+        "websockets>=12.0",
     ],
     entry_points={
         "console_scripts": [

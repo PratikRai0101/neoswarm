@@ -75,6 +75,30 @@ async def test_client_uses_the_backend_session_contract():
 
 
 @pytest.mark.asyncio
+async def test_client_uses_the_backend_mission_contract():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/agents/missions" and request.method == "GET":
+            return httpx.Response(200, json={"missions": []})
+        if request.url.path == "/api/agents/missions" and request.method == "POST":
+            return httpx.Response(200, json={"mission": {"id": "mission-1", "status": "pending"}})
+        if request.url.path == "/api/agents/missions/mission-1/start":
+            return httpx.Response(200, json={"mission": {"id": "mission-1", "status": "running"}})
+        if request.url.path == "/api/agents/missions/mission-1":
+            return httpx.Response(200, json={"mission": {"id": "mission-1", "status": "completed"}})
+        return httpx.Response(404, json={"detail": "missing"})
+
+    client = BackendClient(
+        "http://localhost:8324",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await client.missions() == []
+    assert (await client.create_mission({"mission": "Test"}))['id'] == "mission-1"
+    assert (await client.start_mission("mission-1"))['status'] == "running"
+    assert (await client.mission("mission-1"))['status'] == "completed"
+
+
+@pytest.mark.asyncio
 async def test_client_raises_useful_error_for_failed_requests():
     client = BackendClient(
         "http://localhost:8324",

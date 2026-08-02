@@ -96,6 +96,38 @@ class BackendClient:
             raise BackendRequestError("backend returned invalid sessions")
         return sessions
 
+    async def missions(self) -> list[dict[str, Any]]:
+        response = await self._request("GET", "/api/agents/missions")
+        missions = response.get("missions", [])
+        if not isinstance(missions, list):
+            raise BackendRequestError("backend returned invalid missions")
+        return missions
+
+    async def create_mission(self, payload: dict[str, Any]) -> dict[str, Any]:
+        response = await self._request("POST", "/api/agents/missions", payload=payload)
+        mission = response.get("mission")
+        if not isinstance(mission, dict) or not mission.get("id"):
+            raise BackendRequestError("backend did not return a new mission")
+        return mission
+
+    async def start_mission(self, mission_id: str) -> dict[str, Any]:
+        response = await self._request(
+            "POST", f"/api/agents/missions/{quote(mission_id, safe='')}/start"
+        )
+        mission = response.get("mission")
+        if not isinstance(mission, dict) or not mission.get("id"):
+            raise BackendRequestError("backend returned an invalid started mission")
+        return mission
+
+    async def mission(self, mission_id: str) -> dict[str, Any]:
+        response = await self._request(
+            "GET", f"/api/agents/missions/{quote(mission_id, safe='')}"
+        )
+        mission = response.get("mission")
+        if not isinstance(mission, dict) or not mission.get("id"):
+            raise BackendRequestError("backend returned an invalid mission")
+        return mission
+
     async def launch(self, config: dict[str, Any]) -> dict[str, Any]:
         response = await self._request("POST", "/api/agents/launch", payload=config)
         session = response.get("session")

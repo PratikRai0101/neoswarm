@@ -11,14 +11,18 @@ Usage:
 
 import asyncio
 import os
-import sys
-from typing import Optional
-from rich.console import Console
+import subprocess
+from pathlib import Path
+from typing import Any, Optional
 
 import click
 import httpx
+import websockets
+from websockets.exceptions import WebSocketException
 from rich.console import Console
 from rich.table import Table
+
+from cli.tui_client import BackendClient, BackendRequestError, decode_event, websocket_url
 
 console = Console()
 
@@ -30,14 +34,73 @@ def get_backend_url() -> str:
 
 async def check_backend() -> bool:
     """Check if backend is running."""
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{get_backend_url()}/api/health/check", timeout=5.0
-            )
-            return resp.status_code == 200
-    except Exception:
-        return False
+    return await BackendClient(get_backend_url()).health()
+
+
+def _message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        return str(content.get("text") or content.get("tool") or content)
+    return str(content)
+
+
+async def _stream_turn(client: BackendClient, session_id: str, payload: dict[str, Any]) -> None:
+    """Send one turn while printing normalized WebSocket events."""
+    url = websocket_url(get_backend_url(), f"/ws/agents/{session_id}")
+    streamed_text = False
+    async with websockets.connect(url, ping_interval=20) as socket:
+        await client.send(session_id, payload)
+        async for raw in socket:
+            event = decode_event(raw)
+            if event.event == "agent:stream_delta":
+                delta = event.data.get("delta", "")
+                if isinstance(delta, str):
+                    console.print(delta, end="")
+                    streamed_text = True
+            elif event.event == "agent:message":
+                message = event.data.get("message", {})
+                if not isinstance(message, dict):
+                    continue
+                role = message.get("role")
+                content = message.get("content")
+                if role == "tool_call" and isinstance(content, dict):
+                    console.print(f"\n[dim]▸ {content.get('tool', 'tool')}[/dim]")
+                elif role == "tool_result" and isinstance(content, dict):
+                    tool_name = content.get("tool_name", "tool")
+                    result = str(content.get("text", ""))[:500]
+                    console.print(f"\n[dim]↳ {tool_name}: {result}[/dim]")
+                elif role == "assistant" and not streamed_text:
+                    console.print(_message_text(content))
+            elif event.event == "agent:status":
+                status = event.data.get("status")
+                if status in {"completed", "stopped", "error"}:
+                    if streamed_text:
+                        console.print()
+                    return
+
+
+async def _wait_for_session(client: BackendClient, session_id: str) -> dict[str, Any]:
+    """Wait for a session turn to reach a terminal state."""
+    while True:
+        session = await client.session(session_id)
+        if session.get("status") not in {"running", "waiting_approval"}:
+            return session
+        await asyncio.sleep(0.25)
+
+
+async def _wait_for_mission(client: BackendClient, mission_id: str) -> dict[str, Any]:
+    """Poll a mission until it completes, fails, or is cancelled."""
+    last_status = None
+    while True:
+        mission = await client.mission(mission_id)
+        status = mission.get("status")
+        if status != last_status:
+            console.print(f"[cyan]→ Mission status: {status}[/cyan]")
+            last_status = status
+        if status in {"completed", "failed", "cancelled"}:
+            return mission
+        await asyncio.sleep(0.5)
 
 
 @click.group()
@@ -51,40 +114,51 @@ def cli():
 @click.option("--model", "-m", default="sonnet", help="Model to use")
 @click.option("--stream/--no-stream", default=True, help="Stream responses")
 def chat(model: str, stream: bool):
-    """Start an interactive chat."""
+    """Start an interactive chat against the backend session API."""
     console.print("[green]🐝 NeoSwarm Chat[/green]")
     console.print(f"[dim]Model: {model} | Backend: {get_backend_url()}[/dim]")
     console.print("[dim]Type 'exit' to quit[/dim]\n")
 
     async def run():
-        if not await check_backend():
-            console.print(
-                "[red]✗ Backend not running. Start with: neoswarm server[/red]"
-            )
+        client = BackendClient(get_backend_url())
+        if not await client.health():
+            console.print("[red]✗ Backend not running. Start with: neoswarm server[/red]")
             return
 
-        async with httpx.AsyncClient() as client:
-            session_id = None
-            while True:
-                prompt = await console.input("[cyan]> [/cyan]")
-                if not prompt or prompt.lower() == "exit":
-                    break
+        session_id: str | None = None
+        while True:
+            prompt = console.input("[cyan]> [/cyan]").strip()
+            if not prompt or prompt.lower() == "exit":
+                break
 
-                if not session_id:
-                    resp = await client.post(
-                        f"{get_backend_url()}/api/agents/sessions",
-                        json={"model": model, "mode": "chat"},
-                    )
-                    if resp.status_code == 200:
-                        session_id = resp.json().get("id")
+            try:
+                if session_id is None:
+                    session = await client.launch({
+                        "name": "CLI chat",
+                        "model": model,
+                        "mode": "agent",
+                    })
+                    session_id = str(session["id"])
 
-                if session_id:
-                    resp = await client.post(
-                        f"{get_backend_url()}/api/agents/sessions/{session_id}/prompt",
-                        json={"prompt": prompt},
+                payload = {"prompt": prompt, "model": model}
+                if stream:
+                    await _stream_turn(client, session_id, payload)
+                else:
+                    await client.send(session_id, payload)
+                    session = await _wait_for_session(client, session_id)
+                    message = next(
+                        (
+                            item
+                            for item in reversed(session.get("messages", []))
+                            if item.get("role") in {"assistant", "system"}
+                        ),
+                        None,
                     )
-                    if resp.status_code == 200:
-                        console.print("[green]✓[/green]")
+                    if message:
+                        console.print(_message_text(message.get("content")))
+            except (BackendRequestError, OSError, WebSocketException) as exc:
+                console.print(f"[red]✗ {exc}[/red]")
+                return
 
     asyncio.run(run())
 
@@ -92,41 +166,80 @@ def chat(model: str, stream: bool):
 @cli.command()
 @click.argument("mission")
 @click.option("--model", "-m", default="sonnet", help="Model to use")
-@click.option("--workers", "-w", default=3, help="Number of workers")
-def launch(mission: str, model: str, workers: int):
-    """Launch a mission with the orchestrator."""
+@click.option("--workers", "-w", default=3, type=click.IntRange(1, 8), help="Number of workers")
+@click.option("--execution-mode", type=click.Choice(["parallel", "sequential"]), default="parallel", show_default=True)
+@click.option("--provider", default=None, help="Provider override")
+@click.option("--directory", default=None, help="Working directory for workers")
+@click.option("--isolate-workers/--shared-workers", default=False, help="Use isolated git worktrees")
+def launch(mission: str, model: str, workers: int, execution_mode: str, provider: str | None, directory: str | None, isolate_workers: bool):
+    """Launch and monitor a mission with the orchestrator."""
     console.print(f"[green]🐝 Launching: {mission}[/green]")
-    console.print(f"[dim]Model: {model} | Workers: {workers}[/dim]")
+    console.print(f"[dim]Model: {model} | Workers: {workers} | Mode: {execution_mode}[/dim]")
 
     async def run():
-        if not await check_backend():
-            console.print("[red]✗ Backend not running[/red]")
+        client = BackendClient(get_backend_url())
+        if not await client.health():
+            console.print("[red]✗ Backend not running. Start with: neoswarm server[/red]")
+            return
+        try:
+            mission_data = await client.create_mission({
+                "mission": mission,
+                "workers": workers,
+                "model": model,
+                "provider": provider,
+                "execution_mode": execution_mode,
+                "target_directory": directory,
+                "isolate_workers": isolate_workers,
+            })
+            mission_id = str(mission_data["id"])
+            await client.start_mission(mission_id)
+            result = await _wait_for_mission(client, mission_id)
+        except BackendRequestError as exc:
+            console.print(f"[red]✗ {exc}[/red]")
             return
 
-        console.print("[cyan]→ Decomposing mission...[/cyan]")
-        console.print("[yellow]TODO: Connect to orchestrator API[/yellow]")
-        console.print(f"[green]✓ Mission launched[/green]")
+        if result.get("status") == "completed":
+            console.print("[green]✓ Mission completed[/green]")
+        else:
+            console.print(f"[red]✗ Mission {result.get('status')}[/red]")
+        if result.get("final_result"):
+            console.print(result["final_result"])
 
     asyncio.run(run())
 
 
 @cli.command()
 def status():
-    """Show current session status."""
+    """Show currently active agent sessions."""
     console.print("[green]🐝 Session Status[/green]\n")
 
     async def run():
-        if not await check_backend():
+        client = BackendClient(get_backend_url())
+        if not await client.health():
             console.print("[red]✗ Backend not running[/red]")
             return
+        try:
+            sessions = await client.sessions()
+        except BackendRequestError as exc:
+            console.print(f"[red]✗ {exc}[/red]")
+            return
 
+        active = [s for s in sessions if s.get("status") in {"running", "waiting_approval"}]
+        if not active:
+            console.print("[dim]No active sessions.[/dim]")
+            return
         table = Table(title="Active Sessions")
         table.add_column("ID", style="cyan")
+        table.add_column("Name", style="white")
         table.add_column("Status", style="green")
-        table.add_column("Model", style="yellow")
-
-        table.add_row("sample-123", "running", "sonnet")
-
+        table.add_column("Provider/Model", style="yellow")
+        for session in active:
+            table.add_row(
+                str(session.get("id", ""))[:12],
+                str(session.get("name", "Untitled"))[:32],
+                str(session.get("status", "")),
+                f"{session.get('provider', '')}/{session.get('model', '')}",
+            )
         console.print(table)
 
     asyncio.run(run())
@@ -134,20 +247,32 @@ def status():
 
 @cli.command()
 def sessions():
-    """List all sessions."""
+    """List persisted and active chat sessions."""
     console.print("[green]🐝 Sessions[/green]\n")
 
     async def run():
-        if not await check_backend():
+        client = BackendClient(get_backend_url())
+        if not await client.health():
             console.print("[red]✗ Backend not running[/red]")
+            return
+        try:
+            all_sessions = await client.sessions()
+        except BackendRequestError as exc:
+            console.print(f"[red]✗ {exc}[/red]")
             return
 
         table = Table(title="All Sessions")
         table.add_column("ID", style="cyan")
-        table.add_column("Mission", style="white")
+        table.add_column("Name", style="white")
         table.add_column("Status", style="green")
-        table.add_column("Workers", style="yellow")
-
+        table.add_column("Provider/Model", style="yellow")
+        for session in all_sessions:
+            table.add_row(
+                str(session.get("id", ""))[:12],
+                str(session.get("name", "Untitled"))[:32],
+                str(session.get("status", "")),
+                f"{session.get('provider', '')}/{session.get('model', '')}",
+            )
         console.print(table)
 
     asyncio.run(run())
@@ -322,7 +447,7 @@ def login(provider: Optional[str], api_key: Optional[str]):
 
 
 @auth.command()
-@click.option("--provider", "-p", type=click.Choice(["anthropic", "openai", "google", "ollama", "openrouter"]), help="Provider to remove")
+@click.option("--provider", "-p", type=click.Choice(["anthropic", "openai", "google", "ollama", "openrouter", "copilot"]), help="Provider to remove")
 def logout(provider: Optional[str]):
     """Remove API credentials."""
     console.print("[green]🐝 NeoSwarm Auth - Logout[/green]\n")
@@ -417,11 +542,15 @@ def status():
 
 @cli.command()
 def server():
-    """Start the NeoSwarm backend server."""
+    """Start the NeoSwarm backend server from the project root."""
     console.print("[green]🐝 Starting backend...[/green]")
-    os.system(
-        "cd backend && source .venv/bin/activate && PYTHONPATH=. uvicorn main:app --host 127.0.0.1 --port 8324"
-    )
+    project_root = Path(__file__).resolve().parents[1]
+    configured_python = os.environ.get("NEOSWARM_PYTHON")
+    if configured_python:
+        command = [configured_python, "-m", "uvicorn", "backend.main:app"]
+    else:
+        command = [str(project_root / "run-backend.sh")]
+    subprocess.run(command, cwd=project_root, check=False)
 
 
 if __name__ == "__main__":
