@@ -154,7 +154,9 @@ async def test_native_loop_connects_and_executes_mcp_tools(tmp_path, monkeypatch
     assert len(FakeMCPClientManager.instances) == 1
     mcp = FakeMCPClientManager.instances[0]
     assert mcp.closed is True
-    assert mcp.servers == {"example": {"type": "http", "url": "https://example.test/mcp"}}
+    assert mcp.servers["example"] == {"type": "http", "url": "https://example.test/mcp"}
+    assert "neoswarm-browser-agent" in mcp.servers
+    assert "neoswarm-invoke-agent" in mcp.servers
     assert mcp.calls == [("example", "lookup", {"value": "answer"})]
     assert any(
         message.role == "tool_result"
