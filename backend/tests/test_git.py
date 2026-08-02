@@ -44,6 +44,21 @@ async def test_git_service_reports_diff_and_commit(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_git_service_parses_tracking_branch_counts(tmp_path):
+    init_repo(tmp_path)
+    remote = tmp_path.parent / "git-remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "push", "-qu", "origin", "HEAD"], check=True)
+    (tmp_path / "README.md").write_text("ahead\n")
+
+    status = await GitService().status(str(tmp_path))
+    assert status.upstream
+    assert status.ahead == 0
+    assert status.behind == 0
+
+
+@pytest.mark.asyncio
 async def test_git_tools_use_agent_working_directory(tmp_path):
     init_repo(tmp_path)
     (tmp_path / "notes.txt").write_text("note\n")

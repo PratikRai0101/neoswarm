@@ -61,11 +61,14 @@ class GitService:
         ahead = behind = 0
         if "..." in header:
             branch, tracking = header.split("...", 1)
-            match = re.match(r"([^ ]+)(?: \[ahead (\d+)(?:, behind (\d+))?| \[behind (\d+))?\])?", tracking)
+            match = re.match(r"(?P<upstream>[^ ]+)(?: \[(?P<details>[^]]+)\])?$", tracking)
             if match:
-                upstream = match.group(1)
-                ahead = int(match.group(2) or 0)
-                behind = int(match.group(3) or match.group(4) or 0)
+                upstream = match.group("upstream")
+                details = match.group("details") or ""
+                ahead_match = re.search(r"ahead (\d+)", details)
+                behind_match = re.search(r"behind (\d+)", details)
+                ahead = int(ahead_match.group(1)) if ahead_match else 0
+                behind = int(behind_match.group(1)) if behind_match else 0
         elif header.startswith("No commits yet on "):
             branch = header.removeprefix("No commits yet on ")
         entries: list[GitStatusEntry] = []
