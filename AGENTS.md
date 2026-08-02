@@ -50,7 +50,8 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 - Tauri updater metadata and update-install flow still need to be wired and smoke-tested.
 - Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
 - Release artifacts are configured for Linux AppImage/deb, but packaged smoke tests and other target builds remain.
-- Native OS computer control, image generation, artifact viewing, terminal tabs, SSH, and dedicated Git/PR hosting workflows remain roadmap work; local Git inspection and commits are implemented.
+- Optional approval-gated native desktop control is implemented through the host computer adapter; display permissions, platform packaging, and cross-platform testing remain.
+- Image generation, artifact viewing, terminal tabs, SSH, and dedicated Git/PR hosting workflows remain roadmap work; local Git inspection and commits are implemented.
 
 ---
 
@@ -125,9 +126,9 @@ The orchestrator supports **both sequential and parallel** execution modes:
 - **User Choice**: Users can select mode when launching a mission
 
 ### Computer Use
-NeoSwarm currently has a browser-agent implementation and browser cards, but the runtime path is still being completed:
-- **Browser Automation** ✅: Browser-agent loops, MCP routing, and Tauri native child webviews are implemented; cross-platform command/lifecycle testing remains.
-- **Native App Control** 🔄 (Future): Controls native applications (Linux first, then macOS).
+NeoSwarm has browser and optional native desktop computer-use paths:
+- **Browser Automation** ✅: Browser-agent loops, MCP routing, Tauri native child webviews, and Tauri command routing are implemented; cross-platform command/lifecycle testing remains.
+- **Native App Control** 🟡: Approval-gated PyAutoGUI adapter supports screenshots, mouse, keyboard, and scrolling; host permissions, packaging, and target testing remain.
 
 ### Environment Variables
 - `NEOSWARM_PORT` — backend port (default: 8324)
@@ -177,7 +178,7 @@ NeoSwarm currently has a browser-agent implementation and browser cards, but the
 
 | Feature | OpenAI Codex | NeoSwarm | Priority |
 |---------|--------------|----------|----------|
-| Computer Use | ✅ macOS app control | 🟡 Browser agent/card actions; native OS control remains future | High |
+| Computer Use | ✅ macOS app control | 🟡 Approval-gated optional mouse/keyboard/screenshot adapter; host permissions and target testing remain | High |
 | In-app Browser | ✅ Local servers + web | 🟡 Basic iframe fallback; native Tauri webview/control remains | High |
 | Image Generation | ✅ gpt-image-1.5 | 🔄 Future tool | Low |
 | Memory | ✅ Persistent | ✅ Local memory store, relevance context, tools, API, and Memory workspace | Medium |
@@ -261,7 +262,7 @@ NeoSwarm currently has a browser-agent implementation and browser cards, but the
 - [x] Scheduled/automated tasks
 - [x] MCP runtime execution for configured integrations
 - [ ] Image generation tool
-- [ ] Native Linux/macOS application control
+- [~] Native Linux/macOS application control: approval-gated PyAutoGUI adapter exists; target packaging and host-permission testing remain
 - [~] Dedicated Git/PR workflow: local Git workspace is complete; hosted PR review remains
 - [ ] Artifact viewer for PDF/spreadsheets
 - [ ] Multi-tab terminal
@@ -315,7 +316,7 @@ neoswarm server           # Start backend server
 
 | Feature | Codex | NeoSwarm |
 |---------|-------|----------|
-| Computer Use | ✅ macOS app control | ✅ Browser automation + Native app control (Linux/macOS) |
+| Computer Use | ✅ macOS app control | 🟡 Browser automation plus optional approval-gated native desktop adapter |
 | Local Models | ❌ Cloud only | ✅ Ollama (fully local) |
 | Multi-agent | ✅ Parallel agents | ✅ Orchestrator |
 | Open Source | ❌ Proprietary | ✅ MIT License |
@@ -434,6 +435,7 @@ neoswarm server           # Start backend server
 - Provider credentials: environment variables take precedence, then the platform keychain/settings store
 - Native AgentLoop built-ins: filesystem, shell, question, web, memory, scheduling, and Git tools; configured MCP/browser delegation runs through `MCPClientManager`
 - Persistent memory lives under the configured data root in `memory/`; schedules live under `schedules/`
+- Native desktop control is optional (`backend/requirements-computer.txt`) and defaults to approval-required policy
 - Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 133 tests pass)
 
 ---
