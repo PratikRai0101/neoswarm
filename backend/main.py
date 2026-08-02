@@ -1,8 +1,39 @@
 import logging
 import os
+import threading
+import time
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+
+
+def _start_parent_watchdog() -> None:
+    """Exit a sidecar backend when the desktop process disappears.
+
+    PyInstaller one-file executables use a bootloader parent, so checking only
+    ``os.getppid()`` is insufficient. The Tauri launcher passes its PID and we
+    monitor that process directly instead.
+    """
+    raw_parent_pid = os.environ.get("NEOSWARM_PARENT_PID")
+    if not raw_parent_pid:
+        return
+    try:
+        parent_pid = int(raw_parent_pid)
+    except ValueError:
+        return
+
+    def monitor() -> None:
+        while True:
+            try:
+                os.kill(parent_pid, 0)
+            except OSError:
+                os._exit(0)
+            time.sleep(0.5)
+
+    threading.Thread(target=monitor, name="neoswarm-parent-watchdog", daemon=True).start()
+
+
+_start_parent_watchdog()
 
 from fastapi.responses import JSONResponse
 from fastapi import Request

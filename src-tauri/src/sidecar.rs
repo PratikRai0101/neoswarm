@@ -20,10 +20,28 @@ impl BackendProcess {
         let Some(mut child) = guard.take() else {
             return;
         };
+
+        #[cfg(unix)]
+        {
+            // PyInstaller one-file executables run a small bootloader parent
+            // and a child server process. Put both in their own process group
+            // so closing NeoSwarm cannot leave the server orphaned.
+            let process_group = -(child.id() as libc::pid_t);
+            if unsafe { libc::kill(process_group, libc::SIGTERM) } != 0 {
+                warn!(
+                    "Failed to stop backend process group: {}",
+                    std::io::Error::last_os_error()
+                );
+            }
+        }
+        #[cfg(not(unix))]
         if let Err(err) = child.kill() {
             warn!("Failed to stop backend process: {}", err);
         }
-        let _ = child.wait();
+
+        if let Err(err) = child.wait() {
+            warn!("Failed to wait for backend process: {}", err);
+        }
     }
 }
 
@@ -41,13 +59,15 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
     // dependencies, so end users do not need a venv or system packages.
     if let Some(binary) = find_bundled_backend(resource_dir.as_deref()) {
         info!("Starting bundled backend executable: {:?}", binary);
-        let child = Command::new(binary)
+        let mut command = Command::new(binary);
+        command
             .args(["--host", "127.0.0.1", "--port", "8324"])
             .env("NEOSWARM_PACKAGED", "1")
+            .env("NEOSWARM_PARENT_PID", std::process::id().to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()?;
+            .stderr(Stdio::inherit());
+        let child = spawn_backend_process(command)?;
         app.manage(BackendProcess::new(child));
         return Ok(());
     }
@@ -71,7 +91,8 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
     };
 
     info!("Starting development backend with {:?}", python);
-    let child = Command::new(python)
+    let mut command = Command::new(python);
+    command
         .args([
             "-m",
             "uvicorn",
@@ -83,14 +104,14 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
         ])
         .current_dir(project_root)
         .env("PYTHONPATH", project_root)
+        .env("NEOSWARM_PARENT_PID", std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|err| {
-            error!("Failed to spawn backend: {}", err);
-            err
-        })?;
+        .stderr(Stdio::inherit());
+    let child = spawn_backend_process(command).map_err(|err| {
+        error!("Failed to spawn backend: {}", err);
+        err
+    })?;
 
     app.manage(BackendProcess::new(child));
     Ok(())
@@ -100,6 +121,16 @@ pub fn shutdown_backend(app: &AppHandle) {
     if let Some(process) = app.try_state::<BackendProcess>() {
         process.stop();
     }
+}
+
+fn spawn_backend_process(mut command: Command) -> std::io::Result<Child> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        command.process_group(0);
+    }
+    command.spawn()
 }
 
 fn find_bundled_backend(resource_dir: Option<&Path>) -> Option<PathBuf> {
