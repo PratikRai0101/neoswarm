@@ -63,7 +63,7 @@ async def test_publish_artifact_tool_uses_agent_working_directory(artifact_store
     assert payload["name"] == "summary.md"
     assert payload["description"] == "Mission summary"
     assert payload["media_type"] == "text/markdown"
-    assert (artifact_store / f"{payload['id']}.bin").read_bytes() == source.read_bytes()
+    assert (artifact_store / f"{payload['id']}.md").read_bytes() == source.read_bytes()
 
 
 def test_publish_artifact_rejects_files_above_limit(artifact_store, tmp_path, monkeypatch):

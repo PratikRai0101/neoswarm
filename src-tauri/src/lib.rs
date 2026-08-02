@@ -56,11 +56,25 @@ fn open_artifact(app: tauri::AppHandle, artifact_id: String) -> Result<(), Strin
 
     for data_root in artifact_data_roots(&app) {
         let artifact_dir = data_root.join("artifacts");
-        let content = artifact_dir.join(format!("{artifact_id}.bin"));
         let metadata = artifact_dir.join(format!("{artifact_id}.json"));
-        if !content.is_file() || !metadata.is_file() {
+        if !metadata.is_file() {
             continue;
         }
+        let Some(content) = std::fs::read_dir(&artifact_dir).ok().and_then(|entries| {
+            entries.filter_map(Result::ok).map(|entry| entry.path()).find(|path| {
+                path.is_file()
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| {
+                            name.starts_with(&format!("{artifact_id}."))
+                                && name != format!("{artifact_id}.json")
+                        })
+                        .unwrap_or(false)
+            })
+        }) else {
+            continue;
+        };
 
         let canonical_dir = std::fs::canonicalize(&artifact_dir)
             .map_err(|error| format!("Could not access artifact directory: {error}"))?;

@@ -47,9 +47,17 @@ def _metadata_path(artifact_id: str) -> Path:
     return Path(ARTIFACTS_DIR) / f"{artifact_id}.json"
 
 
-def _content_path(artifact_id: str) -> Path:
-    _metadata_path(artifact_id)
-    return Path(ARTIFACTS_DIR) / f"{artifact_id}.bin"
+def _content_filename(artifact: Artifact) -> str:
+    suffix = Path(artifact.filename).suffix.lower()
+    if suffix and re.fullmatch(r"\.[a-z0-9]{1,16}", suffix):
+        return f"{artifact.id}{suffix}"
+    return f"{artifact.id}.bin"
+
+
+def _content_candidates(artifact: Artifact) -> list[Path]:
+    current = Path(ARTIFACTS_DIR) / _content_filename(artifact)
+    legacy = Path(ARTIFACTS_DIR) / f"{artifact.id}.bin"
+    return [current] if current == legacy else [current, legacy]
 
 
 def _load(artifact_id: str) -> Artifact:
@@ -108,7 +116,7 @@ def publish_file(
 
     root = Path(ARTIFACTS_DIR)
     root.mkdir(parents=True, exist_ok=True)
-    content_path = root / f"{artifact.id}.bin"
+    content_path = root / _content_filename(artifact)
     metadata_path = root / f"{artifact.id}.json"
     try:
         shutil.copyfile(source, content_path)
@@ -138,8 +146,8 @@ def _all() -> list[Artifact]:
 
 
 def _content_response(artifact: Artifact, *, download: bool) -> FileResponse:
-    content_path = _content_path(artifact.id)
-    if not content_path.is_file():
+    content_path = next((path for path in _content_candidates(artifact) if path.is_file()), None)
+    if content_path is None:
         raise HTTPException(status_code=404, detail="Artifact content not found")
     filename = artifact.filename.replace('"', "_").replace("\r", "").replace("\n", "")
     disposition = "attachment" if download else "inline"
@@ -174,5 +182,6 @@ async def get_artifact(artifact_id: str):
 async def delete_artifact(artifact_id: str):
     artifact = _load(artifact_id)
     _metadata_path(artifact.id).unlink(missing_ok=True)
-    _content_path(artifact.id).unlink(missing_ok=True)
+    for content_path in _content_candidates(artifact):
+        content_path.unlink(missing_ok=True)
     return {"ok": True}
