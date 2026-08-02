@@ -20,7 +20,13 @@ npm install
 cd ..
 ```
 
-The backend venv includes the Textual TUI runtime as well as FastAPI.
+The backend venv includes the Textual TUI runtime as well as FastAPI. Native
+computer control is optional; install its host adapter only on a machine where
+mouse and keyboard control is intended:
+
+```bash
+backend/.venv/bin/pip install -r backend/requirements-computer.txt
+```
 
 ## Run the web workspace
 

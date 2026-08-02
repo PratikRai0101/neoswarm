@@ -1,0 +1,3 @@
+# Optional native desktop control. Install this only on a machine where
+# NeoSwarm is allowed to control the local mouse and keyboard.
+pyautogui>=0.9.54

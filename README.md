@@ -36,6 +36,8 @@ configured MCP tools.
   **Linux AppImage and deb**
 - Local memory workspace, durable automations, and Git workspace/API with
   explicit commit controls
+- Optional approval-gated native desktop control (mouse, keyboard, scrolling,
+  and screenshots) via the host computer adapter
 
 ## Quick start
 

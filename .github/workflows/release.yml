@@ -35,6 +35,7 @@ jobs:
         run: |
           python -m venv backend/.venv
           backend/.venv/bin/pip install -r backend/requirements.txt
+          backend/.venv/bin/pip install -r backend/requirements-computer.txt
 
       - uses: actions/setup-node@v4
         with:
