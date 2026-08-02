@@ -36,14 +36,22 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Phase 1: Fork + Rebrand | ✅ Complete | Forked from OpenSwarm, Tauri instead of Electron |
-| Phase 2: Native Agent System | ✅ Complete | Ollama support, native AgentLoop |
-| Phase 3: Orchestrator Agent | ✅ Complete | Multi-agent coordination |
-| Phase 4: CLI + TUI | ✅ Complete | Basic CLI and TUI |
-| Phase 5: Packaging | ✅ Complete | Tauri app with custom icon |
-| Phase 6: Codex-style Features | ✅ Complete | Auth System |
-| Phase 7: Enhanced TUI | ✅ Complete | TUI (OpenCode-style) |
-| Phase 8: Native App Enhancements | 🔄 In Progress | Native App (Codex-style) |
+| Phase 1: Fork + Rebrand | ✅ Complete | NeoSwarm branding, icon, and Tauri v2 desktop shell |
+| Phase 2: Native Agent System | ✅ Complete | Provider-agnostic streaming AgentLoop, tools, approvals, and persistence |
+| Phase 3: Orchestrator Agent | ✅ Complete | Durable mission API/UI with parallel or sequential workers |
+| Phase 4: CLI + TUI | 🟡 TUI complete / CLI partial | Streaming Textual TUI is usable; legacy Click commands still need completion |
+| Phase 5: Packaging | 🟡 Pipeline complete | Bundled PyInstaller backend and Linux AppImage/deb targets are configured; release artifacts still need target verification |
+| Phase 6: Provider Auth | 🟡 API-key auth complete | Secure settings/keychain storage is complete; direct model-provider OAuth is not implemented |
+| Phase 7: Enhanced TUI | ✅ Complete | Session rail, streaming transcript, command center, approvals, and reconnecting transport |
+| Phase 8: Native App Runtime | 🔄 In Progress | Tauri bridge, MCP runtime execution, native browser control, and release hardening |
+
+### Current implementation gaps (2026-08-02)
+
+- `MCPClientManager` exists but the native `AgentLoop` still needs to connect MCP servers and route `mcp__...` tool calls through it.
+- The Tauri shell launches the backend, but parts of the frontend still use Electron-only APIs (`window.neoswarm`, `<webview>`, preload paths, and native capture hooks).
+- Browser cards have a basic iframe fallback; full Tauri webview control is not complete.
+- The legacy Click CLI has placeholder/obsolete commands; the Textual TUI is the supported terminal client.
+- Long-term memory, scheduled tasks, image generation, native OS control, terminal tabs, SSH, and dedicated Git workflows remain roadmap work.
 
 ---
 
@@ -118,9 +126,9 @@ The orchestrator supports **both sequential and parallel** execution modes:
 - **User Choice**: Users can select mode when launching a mission
 
 ### Computer Use
-NeoSwarm supports two levels of computer automation:
-- **Browser Automation** ✅ (Current): Controls web browsers for web automation, testing, scraping
-- **Native App Control** 🔄 (Future): Controls native applications (Linux first, then macOS)
+NeoSwarm currently has a browser-agent implementation and browser cards, but the runtime path is still being completed:
+- **Browser Automation** 🟡 (Partial): Browser-agent loops and browser-card actions exist; native AgentLoop MCP routing and Tauri webview control remain.
+- **Native App Control** 🔄 (Future): Controls native applications (Linux first, then macOS).
 
 ### Environment Variables
 - `NEOSWARM_PORT` — backend port (default: 8324)
@@ -143,11 +151,11 @@ NeoSwarm supports two levels of computer automation:
 |---------|----------------|--------------|
 | `neoswarm auth login` | ✅ | Interactive provider setup |
 | `neoswarm auth logout` | ✅ | Remove credentials |
-| `neoswarm auth status` | ✅ | Show connected providers |
-| Auth storage | ✅ | `~/.neoswarm/auth.json` |
-| API key input | ✅ | Manual key entry |
-| OAuth (future) | 🔄 | Browser-based auth |
-| Env var priority | ✅ | ENV > auth.json > settings |
+| `neoswarm auth status` | 🟡 | Works through the backend, but the legacy CLI needs cleanup |
+| Auth storage | ✅ | `settings.json` plus OS keychain, with owner-only file fallback |
+| API key input | ✅ | Settings UI and CLI support direct provider keys |
+| OAuth (future) | 🟡 | Tool OAuth and Copilot device flow exist; direct model-provider OAuth remains future work |
+| Env var priority | ✅ | ENV > keychain/settings > defaults |
 
 **Files:** `backend/apps/settings/`, `cli/main.py`
 
@@ -170,14 +178,14 @@ NeoSwarm supports two levels of computer automation:
 
 | Feature | OpenAI Codex | NeoSwarm | Priority |
 |---------|--------------|----------|----------|
-| Computer Use | ✅ macOS app control | ✅ Browser automation + 🔄 Native App Control (Linux first, then macOS) | High |
-| In-app Browser | ✅ Local servers + web | 🔄 Tauri webview | High |
+| Computer Use | ✅ macOS app control | 🟡 Browser agent/card actions; native OS control remains future | High |
+| In-app Browser | ✅ Local servers + web | 🟡 Basic iframe fallback; native Tauri webview/control remains | High |
 | Image Generation | ✅ gpt-image-1.5 | 🔄 Future tool | Low |
-| Memory | ✅ Persistent | 🔄 Session context | Medium |
-| 90+ Plugins | ✅ MCP servers | ✅ Have 9+ tools | Done |
-| Multi-agent | ✅ Parallel | ✅ Orchestrator (sequential or parallel - user choice) | Done |
+| Memory | ✅ Persistent | 🟡 Persisted sessions only; long-term memory remains | Medium |
+| 90+ Plugins | ✅ MCP servers | 🟡 Registry/configuration exists; native runtime execution is in progress | High |
+| Multi-agent | ✅ Parallel | ✅ Mission workspace with sequential/parallel workers; in-chat delegation follows MCP work | Done |
 | Automations | ✅ Scheduled tasks | 🔄 Future | Low |
-| Git Integration | ✅ PR review, commits | 🔄 Bash tools | Medium |
+| Git Integration | ✅ PR review, commits | 🟡 Bash and optional worktrees; dedicated Git workflows remain | Medium |
 | Artifact Viewer | ✅ PDF, spreadsheets | 🔄 Future | Low |
 | Terminal | ✅ Multiple tabs | 🔄 Future | Low |
 | SSH | ✅ Remote devboxes | 🔄 Future | Low |
@@ -204,16 +212,16 @@ NeoSwarm supports two levels of computer automation:
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| Multi-agent | ✅ | Orchestrator coordinates workers |
-| Browser Agent | ✅ | Computer use via browser |
-| MCP Tools | ✅ | 9+ built-in tools |
-| Sessions | ✅ | Chat session persistence |
-| Model Switching | 🔄 | Change mid-conversation |
-| Auth System | 🔄 | Interactive provider setup |
-| In-app Browser | 🔄 | Tauri webview |
-| Memory | 🔄 | Persistent context |
+| Multi-agent | ✅ | Mission orchestrator coordinates workers; in-chat delegation is being wired through MCP |
+| Browser Agent | 🟡 | Browser-agent loop exists; Tauri/browser runtime path is incomplete |
+| MCP Tools | 🟡 | Registry, configuration, and schemas exist; native call routing remains |
+| Sessions | ✅ | Chat session persistence and searchable history |
+| Model Switching | ✅ | Per-session switching with provider-aware fork handling |
+| Auth System | ✅ | API-key settings, keychain storage, redaction, and CLI/UI flows |
+| In-app Browser | 🟡 | Browser cards and iframe fallback; native Tauri webview remains |
+| Memory | 🔄 | Only session persistence currently |
 | Scheduled Tasks | 🔄 | Automation |
-| Git Tools | 🔄 | Via Bash |
+| Git Tools | 🟡 | Bash and safe worktree isolation; dedicated Git UX remains |
 | Image Gen | 🔄 | Future |
 
 ---
@@ -238,22 +246,30 @@ NeoSwarm supports two levels of computer automation:
 - [x] GitHub Copilot OAuth Device Flow
 - [x] Provider/model header display
 
-### Phase 9: Native App Enhancements (Medium Priority)
-- [ ] Full message history
-- [ ] Tool output panel
-- [ ] Settings panel
-- [ ] In-app browser (Tauri webview)
+### Phase 9: Native App Enhancements (High Priority)
+- [x] Full message history
+- [x] Tool output panel
+- [x] Settings panel
+- [~] In-app browser: basic iframe/browser cards exist; native Tauri webview and automation bridge remain
+- [~] Tauri frontend bridge: backend sidecar exists; updater, native capture, and Electron compatibility APIs remain
+- [~] MCP runtime: connect configured servers and execute their tools from the native loop
 
 ### Phase 10: Advanced Features (Low Priority)
-- [ ] Memory system
+- [ ] Memory system beyond session persistence
 - [ ] Scheduled/automated tasks
-- [ ] More MCP server integrations
+- [~] More MCP server integrations: registry and setup exist; runtime execution is being completed
 - [ ] Image generation tool
+- [ ] Native Linux/macOS application control
+- [ ] Dedicated Git/PR workflow
+- [ ] Artifact viewer for PDF/spreadsheets
+- [ ] Multi-tab terminal
+- [ ] SSH workspaces
 
 ### Phase 11: Standalone Binary (High Priority)
-- [x] Fix backend not spawning for standalone binary (use venv Python path)
+- [x] Fix backend not spawning for standalone binary (use bundled executable or venv Python)
 - [x] Comprehensive backend search (resource dir, next to binary, CWD, dev path)
 - [x] Tauri v2 shell scope configuration
+- [~] Build and smoke-test release artifacts on each supported target
 
 ---
 
@@ -411,10 +427,11 @@ neoswarm server           # Start backend server
 - Run from project root with `PYTHONPATH=.`
 - Health check is at `/api/health/check` not `/health`
 - MCP server names: `neoswarm-browser-agent`, `neoswarm-invoke-agent`
-- Default model: `sonnet` (Anthropic Sonnet 4.6)
-- Default provider: Ollama (local, no API key needed)
+- Default model: `sonnet` (Anthropic Sonnet 4.6); Ollama is the keyless local option and is selected when an Ollama model is chosen
+- Provider credentials: environment variables take precedence, then the platform keychain/settings store
+- Native AgentLoop built-ins: filesystem, shell, question, and web tools; MCP/browser delegation is being integrated through `MCPClientManager`
 
 ---
 
-*Last updated: 2026-04-25*
+*Last updated: 2026-08-02*
 *Building toward "Codex for Everything" - local-first AI agent orchestrator*
