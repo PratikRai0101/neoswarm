@@ -52,6 +52,7 @@ def init_tools() -> None:
         MemorySaveTool,
         MemoryDeleteTool,
     )
+    from backend.apps.agents.tools.git import GitStatusTool, GitDiffTool, GitCommitTool
 
     for tool_cls in [
         ReadTool,
@@ -69,6 +70,9 @@ def init_tools() -> None:
         MemorySearchTool,
         MemorySaveTool,
         MemoryDeleteTool,
+        GitStatusTool,
+        GitDiffTool,
+        GitCommitTool,
     ]:
         register_tool(tool_cls())
 

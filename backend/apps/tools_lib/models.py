@@ -23,6 +23,9 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="MemorySearch", description="Search user-approved local memories for relevant context", category="memory"),
     BuiltinTool(name="MemorySave", description="Save a durable user-approved fact, preference, instruction, or note", category="memory"),
     BuiltinTool(name="MemoryDelete", description="Delete a local memory by ID", category="memory"),
+    BuiltinTool(name="GitStatus", description="Inspect a local Git working tree", category="git"),
+    BuiltinTool(name="GitDiff", description="Read a local Git diff", category="git"),
+    BuiltinTool(name="GitCommit", description="Create an explicitly requested Git commit", category="git"),
     # Deferred tools (loaded via ToolSearch on demand)
     BuiltinTool(name="WebSearch", description="Search the web for real-time information", category="search", deferred=True),
     BuiltinTool(name="WebFetch", description="Fetch and read content from a URL", category="search", deferred=True),
