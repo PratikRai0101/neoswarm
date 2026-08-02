@@ -108,19 +108,55 @@ fn find_bundled_backend(resource_dir: Option<&Path>) -> Option<PathBuf> {
     } else {
         "neoswarm-backend"
     };
-    let resource_dir = resource_dir?;
-    let candidates = [
-        resource_dir.join("backend-dist").join(file_name),
-        resource_dir.join(file_name),
-    ];
+    let resource_dirs = resource_directories(resource_dir);
+    let candidates: Vec<PathBuf> = resource_dirs
+        .iter()
+        .flat_map(|directory| {
+            [
+                directory.join("backend-dist").join(file_name),
+                directory.join(file_name),
+            ]
+        })
+        .collect();
+
     candidates.into_iter().find(|path| path.is_file())
 }
 
-fn find_backend_source(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let mut candidates = Vec::new();
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("backend"));
+/// Resolve resources from both Tauri's path resolver and the executable layout.
+/// On macOS, `resource_dir()` can be unavailable when the binary is launched
+/// directly from a mounted DMG, even though the standard Contents/Resources
+/// directory is present beside the executable.
+fn resource_directories(resource_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut directories = Vec::new();
+    let mut add = |directory: PathBuf| {
+        if !directories.contains(&directory) {
+            directories.push(directory);
+        }
+    };
+
+    if let Some(resource_dir) = resource_dir {
+        add(resource_dir.to_path_buf());
     }
+
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(directory) = executable.parent() {
+            add(directory.to_path_buf());
+            add(directory.join("resources"));
+            if let Some(contents) = directory.parent() {
+                add(contents.join("Resources"));
+            }
+        }
+    }
+
+    directories
+}
+
+fn find_backend_source(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let mut candidates: Vec<PathBuf> =
+        resource_directories(app.path().resource_dir().ok().as_deref())
+            .into_iter()
+            .map(|directory| directory.join("backend"))
+            .collect();
     if let Ok(executable) = std::env::current_exe() {
         if let Some(directory) = executable.parent() {
             candidates.push(directory.join("backend"));
