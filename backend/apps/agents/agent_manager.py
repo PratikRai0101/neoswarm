@@ -82,6 +82,7 @@ FULL_TOOLS = [
     "GitStatus",
     "GitDiff",
     "GitCommit",
+    "ComputerUse",
     "WebSearch",
     "WebFetch",
     "NotebookEdit",
@@ -782,6 +783,10 @@ class AgentManager:
             """Return 'always_allow', 'deny', or 'ask' for any tool."""
             if tool_name in _builtin_perms:
                 return _builtin_perms[tool_name]
+            if tool_name == "ComputerUse":
+                # Desktop input can affect applications outside NeoSwarm. Keep
+                # it approval-gated until the user explicitly changes policy.
+                return "ask"
 
             import re as _re
 

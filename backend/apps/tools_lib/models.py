@@ -26,6 +26,7 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="GitStatus", description="Inspect a local Git working tree", category="git"),
     BuiltinTool(name="GitDiff", description="Read a local Git diff", category="git"),
     BuiltinTool(name="GitCommit", description="Create an explicitly requested Git commit", category="git"),
+    BuiltinTool(name="ComputerUse", description="Control the local desktop with explicit approval", category="computer_use"),
     # Deferred tools (loaded via ToolSearch on demand)
     BuiltinTool(name="WebSearch", description="Search the web for real-time information", category="search", deferred=True),
     BuiltinTool(name="WebFetch", description="Fetch and read content from a URL", category="search", deferred=True),
