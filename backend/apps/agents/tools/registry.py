@@ -42,6 +42,11 @@ def init_tools() -> None:
     )
     from backend.apps.agents.tools.system import BashTool, AskUserQuestionTool
     from backend.apps.agents.tools.web import WebSearchTool, WebFetchTool
+    from backend.apps.agents.tools.scheduling import (
+        CronCreateTool,
+        CronListTool,
+        CronDeleteTool,
+    )
 
     for tool_cls in [
         ReadTool,
@@ -53,6 +58,9 @@ def init_tools() -> None:
         AskUserQuestionTool,
         WebSearchTool,
         WebFetchTool,
+        CronCreateTool,
+        CronListTool,
+        CronDeleteTool,
     ]:
         register_tool(tool_cls())
 
