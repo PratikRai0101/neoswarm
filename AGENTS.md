@@ -40,7 +40,7 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 | Phase 2: Native Agent System | ✅ Complete | Provider-agnostic streaming AgentLoop, tools, approvals, and persistence |
 | Phase 3: Orchestrator Agent | ✅ Complete | Durable mission API/UI with parallel or sequential workers |
 | Phase 4: CLI + TUI | ✅ Complete | Streaming Textual TUI and legacy Click commands are covered by the CLI test suite |
-| Phase 5: Packaging | 🟡 Pipeline complete | Bundled PyInstaller backend and Linux AppImage/deb targets are configured; release artifacts still need target verification |
+| Phase 5: Packaging | 🟡 Pipeline complete | Bundled PyInstaller backend and macOS DMG targets are configured for Intel and Apple Silicon; release artifacts still need target verification |
 | Phase 6: Provider Auth | 🟡 API-key auth complete | Secure settings/keychain storage is complete; direct model-provider OAuth is not implemented |
 | Phase 7: Enhanced TUI | ✅ Complete | Session rail, streaming transcript, command center, approvals, and reconnecting transport |
 | Phase 8: Native App Runtime | 🔄 In Progress | Tauri bridge, browser cards, MCP execution, memory, automations, and release hardening |
@@ -49,8 +49,8 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 
 - Tauri updater metadata and update-install flow still need to be wired and smoke-tested.
 - Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
-- Release artifacts are configured for Linux AppImage/deb, but packaged smoke tests and other target builds remain.
-- Optional approval-gated native desktop control is implemented through the host computer adapter; display permissions, platform packaging, and cross-platform testing remain.
+- Release artifacts are configured for macOS DMG builds on Intel and Apple Silicon, but signed/notarized packaging and updater smoke tests remain.
+- Optional approval-gated native desktop control is implemented through the host computer adapter; macOS Accessibility and Screen Recording permissions still need host testing.
 - Image generation, artifact viewing, terminal tabs, SSH, and dedicated Git/PR hosting workflows remain roadmap work; local Git inspection and commits are implemented.
 
 ---
@@ -81,12 +81,15 @@ neoswarm status
 
 ### Native App
 ```bash
-# AppImage (recommended)
-./src-tauri/target/release/bundle/appimage/NeoSwarm.AppDir/AppRun
+# macOS DMG output
+open src-tauri/target/release/bundle/dmg/NeoSwarm_*.dmg
 
 # Or standalone binary
 ./src-tauri/target/release/neoswarm
 ```
+
+Native desktop control on macOS requires granting NeoSwarm **Accessibility** and
+**Screen Recording** permissions in System Settings when prompted.
 
 ### Health Check
 ```bash
@@ -262,7 +265,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 - [x] Scheduled/automated tasks
 - [x] MCP runtime execution for configured integrations
 - [ ] Image generation tool
-- [~] Native Linux/macOS application control: approval-gated PyAutoGUI adapter exists; target packaging and host-permission testing remain
+- [~] Native macOS application control: approval-gated PyAutoGUI adapter exists; DMG packaging and host-permission testing remain
 - [~] Dedicated Git/PR workflow: local Git workspace is complete; hosted PR review remains
 - [ ] Artifact viewer for PDF/spreadsheets
 - [ ] Multi-tab terminal
@@ -273,7 +276,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 - [x] Fix backend not spawning for standalone binary (use bundled executable or venv Python)
 - [x] Comprehensive backend search (resource dir, next to binary, CWD, dev path)
 - [x] Tauri v2 shell scope configuration
-- [~] Build and smoke-test release artifacts on each supported target
+- [~] Build and smoke-test Intel and Apple Silicon macOS release artifacts
 
 ---
 

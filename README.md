@@ -33,7 +33,7 @@ configured MCP tools.
 - Optional per-worker git worktree isolation with dirty-worktree protection
 - Tauri desktop shell with native browser child webviews, updater support, and a
   self-contained PyInstaller backend executable; current release targets are
-  **Linux AppImage and deb**
+  **macOS DMG packages for Intel and Apple Silicon**
 - Local memory workspace, durable automations, and Git workspace/API with
   explicit commit controls
 - Optional approval-gated native desktop control (mouse, keyboard, scrolling,
@@ -78,16 +78,18 @@ cd frontend
 npm exec tauri -- dev --config ../src-tauri/tauri.conf.json
 ```
 
-Release bundles currently target Linux. The build installs the pinned build
+Release bundles currently target macOS. The build installs the pinned build
 requirements, creates a self-contained backend executable, builds the frontend,
-and bundles both into the app:
+and bundles both into a DMG app package:
 
 ```bash
 npm --prefix frontend exec -- tauri build --config src-tauri/tauri.conf.json
 ```
 
-Tagging a commit with `v*` starts the signed release workflow. Configure the
-`TAURI_SIGNING_PRIVATE_KEY` and optional password repository secrets first.
+Tagging a commit with `v*` starts the macOS release workflow for Intel and Apple
+Silicon. Configure the `TAURI_SIGNING_PRIVATE_KEY` and optional password
+repository secrets first; Apple signing/notarization secrets are required for
+trusted distribution.
 
 The resulting desktop installation does not require the user to install Python
 or backend packages.
