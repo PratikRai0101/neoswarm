@@ -116,11 +116,17 @@ async def list_builtin_tools():
     return {"tools": [t.model_dump() for t in BUILTIN_TOOLS]}
 
 
+_DEFAULT_BUILTIN_PERMISSIONS = {"ComputerUse": "ask"}
+
+
 def load_builtin_permissions() -> dict[str, str]:
+    permissions = dict(_DEFAULT_BUILTIN_PERMISSIONS)
     if not os.path.exists(BUILTIN_PERMS_PATH):
-        return {}
+        return permissions
     with open(BUILTIN_PERMS_PATH) as f:
-        return json.load(f)
+        stored = json.load(f)
+    permissions.update(stored)
+    return permissions
 
 
 def save_builtin_permissions(perms: dict[str, str]):
