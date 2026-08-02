@@ -16,6 +16,7 @@ import InputBase from '@mui/material/InputBase';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import RocketLaunchOutlinedIcon from '@mui/icons-material/RocketLaunchOutlined';
 import ScheduleIcon from '@mui/icons-material/Schedule';
+import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import BuildIcon from '@mui/icons-material/Build';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -285,6 +286,7 @@ const AppShell: React.FC = () => {
   const isDashboardViewActive = location.pathname.startsWith('/dashboard/');
   const isMissionsRoute = location.pathname === '/missions';
   const isSchedulesRoute = location.pathname === '/schedules';
+  const isMemoryRoute = location.pathname === '/memory';
   const isAppsRoute = location.pathname === '/apps' || location.pathname.startsWith('/apps/');
   const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
@@ -800,6 +802,35 @@ const AppShell: React.FC = () => {
                     color: isSchedulesRoute ? c.text.primary : c.text.muted,
                     fontSize: '0.82rem',
                     fontWeight: isSchedulesRoute ? 600 : 400,
+                  },
+                }}
+              />
+            </ListItemButton>
+          </Box>
+
+          {/* Memory */}
+          <Box sx={{ px: 1, mb: 0.25 }}>
+            <ListItemButton
+              onClick={() => navigate('/memory')}
+              sx={{
+                borderRadius: 1.5,
+                py: 0.6,
+                px: 1.25,
+                bgcolor: isMemoryRoute ? `${c.accent.primary}12` : 'transparent',
+                '&:hover': { bgcolor: isMemoryRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <ListItemIcon sx={{ color: isMemoryRoute ? c.accent.primary : c.text.tertiary, minWidth: 32 }}>
+                <PsychologyOutlinedIcon sx={{ fontSize: 20 }} />
+              </ListItemIcon>
+              <ListItemText
+                primary="Memory"
+                sx={{
+                  '& .MuiListItemText-primary': {
+                    color: isMemoryRoute ? c.text.primary : c.text.muted,
+                    fontSize: '0.82rem',
+                    fontWeight: isMemoryRoute ? 600 : 400,
                   },
                 }}
               />

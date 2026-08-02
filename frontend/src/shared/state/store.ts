@@ -15,6 +15,7 @@ import analyticsReducer from './analyticsSlice';
 import modelsReducer from './modelsSlice';
 import missionsReducer from './missionsSlice';
 import schedulesReducer from './schedulesSlice';
+import memoriesReducer from './memoriesSlice';
 
 export const store = configureStore({
   reducer: {
@@ -34,6 +35,7 @@ export const store = configureStore({
     models: modelsReducer,
     missions: missionsReducer,
     schedules: schedulesReducer,
+    memories: memoriesReducer,
   },
 });
 
