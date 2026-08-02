@@ -31,6 +31,7 @@ import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
 import { ThemeProvider, useThemeMode, useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { ClaudeTokens } from '@/shared/styles/claudeTokens';
+import { getTauriUpdater } from '@/shared/tauriUpdater';
 
 function buildMuiTheme(c: ClaudeTokens, mode: 'light' | 'dark') {
   return createTheme({
@@ -177,7 +178,7 @@ const UpdateListener: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    const api = (window as any).neoswarm as NeoSwarmAPI | undefined;
+    const api = ((window as any).neoswarm as NeoSwarmAPI | undefined) || getTauriUpdater();
     if (!api?.getAppVersion) return;
 
     api.getAppVersion().then((v: string) => dispatch(setAppVersion(v)));

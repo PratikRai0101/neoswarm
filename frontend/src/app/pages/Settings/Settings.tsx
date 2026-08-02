@@ -42,6 +42,7 @@ import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { updateSettings, closeSettingsModal, resetSystemPrompt, AppSettings, CustomProvider, DEFAULT_SYSTEM_PROMPT, SECRET_UNCHANGED } from '@/shared/state/settingsSlice';
 import { fetchModels } from '@/shared/state/modelsSlice';
 import { setChecking, setUpdateError, setInstalling } from '@/shared/state/updateSlice';
+import { getTauriUpdater } from '@/shared/tauriUpdater';
 import { fetchModes } from '@/shared/state/modesSlice';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import DirectoryBrowser from '@/app/components/DirectoryBrowser';
@@ -331,6 +332,9 @@ const API_KEY_STEPS = [
   },
 ];
 
+const getDesktopApi = (): NeoSwarmAPI | undefined =>
+  ((window as any).neoswarm as NeoSwarmAPI | undefined) || getTauriUpdater();
+
 const Settings: React.FC = () => {
   const open = useAppSelector((s) => s.settings.modalOpen);
   const c = useClaudeTokens();
@@ -422,7 +426,7 @@ const Settings: React.FC = () => {
       dispatch(setUpdateError('Update check timed out. Please try again.'));
     }, 15000);
     try {
-      await (window as any).neoswarm?.checkForUpdates();
+      await getDesktopApi()?.checkForUpdates();
     } catch {
       /* error handled via IPC event listener */
     } finally {
@@ -432,7 +436,7 @@ const Settings: React.FC = () => {
 
   const handleDownloadUpdate = async () => {
     try {
-      await (window as any).neoswarm?.downloadUpdate();
+      await getDesktopApi()?.downloadUpdate();
     } catch {
       /* error handled via IPC event listener */
     }
@@ -441,7 +445,7 @@ const Settings: React.FC = () => {
   const handleInstallUpdate = () => {
     if (installing) return;
     dispatch(setInstalling());
-    (window as any).neoswarm?.installUpdate();
+    getDesktopApi()?.installUpdate();
   };
 
   const hasChanges = JSON.stringify(form) !== JSON.stringify(settings);
