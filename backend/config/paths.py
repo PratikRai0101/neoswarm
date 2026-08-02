@@ -42,6 +42,7 @@ else:
 SESSIONS_DIR = os.path.join(DATA_ROOT, "sessions")
 MISSIONS_DIR = os.path.join(DATA_ROOT, "missions")
 SCHEDULES_DIR = os.path.join(DATA_ROOT, "schedules")
+MEMORY_DIR = os.path.join(DATA_ROOT, "memory")
 TOOLS_DIR = os.path.join(DATA_ROOT, "tools")
 SETTINGS_DIR = os.path.join(DATA_ROOT, "settings")
 MODES_DIR = os.path.join(DATA_ROOT, "modes")

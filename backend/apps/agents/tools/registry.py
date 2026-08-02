@@ -47,6 +47,11 @@ def init_tools() -> None:
         CronListTool,
         CronDeleteTool,
     )
+    from backend.apps.agents.tools.memory import (
+        MemorySearchTool,
+        MemorySaveTool,
+        MemoryDeleteTool,
+    )
 
     for tool_cls in [
         ReadTool,
@@ -61,6 +66,9 @@ def init_tools() -> None:
         CronCreateTool,
         CronListTool,
         CronDeleteTool,
+        MemorySearchTool,
+        MemorySaveTool,
+        MemoryDeleteTool,
     ]:
         register_tool(tool_cls())
 

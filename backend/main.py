@@ -11,6 +11,7 @@ from backend.config.Apps import MainApp
 from backend.apps.health.health import health
 from backend.apps.agents.agents import agents
 from backend.apps.scheduler.schedules import schedules
+from backend.apps.memory.memory import memory
 from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.skills.skills import skills
 from backend.apps.tools_lib.tools_lib import tools_lib
@@ -30,6 +31,7 @@ main_app = MainApp(
         health,
         agents,
         schedules,
+        memory,
         skills,
         tools_lib,
         modes,

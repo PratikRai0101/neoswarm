@@ -20,6 +20,9 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="Glob", description="Find files matching glob and wildcard patterns", category="search"),
     BuiltinTool(name="Grep", description="Search file contents using regular expressions", category="search"),
     BuiltinTool(name="AskUserQuestion", description="Ask the user a question and wait for their response", category="interaction"),
+    BuiltinTool(name="MemorySearch", description="Search user-approved local memories for relevant context", category="memory"),
+    BuiltinTool(name="MemorySave", description="Save a durable user-approved fact, preference, instruction, or note", category="memory"),
+    BuiltinTool(name="MemoryDelete", description="Delete a local memory by ID", category="memory"),
     # Deferred tools (loaded via ToolSearch on demand)
     BuiltinTool(name="WebSearch", description="Search the web for real-time information", category="search", deferred=True),
     BuiltinTool(name="WebFetch", description="Fetch and read content from a URL", category="search", deferred=True),

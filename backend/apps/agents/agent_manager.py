@@ -76,6 +76,9 @@ FULL_TOOLS = [
     "Glob",
     "Grep",
     "AskUserQuestion",
+    "MemorySearch",
+    "MemorySave",
+    "MemoryDelete",
     "WebSearch",
     "WebFetch",
     "NotebookEdit",
@@ -423,6 +426,7 @@ class AgentManager:
         connected_tools_ctx: str | None = None,
         outputs_ctx: str | None = None,
         browser_ctx: str | None = None,
+        memory_ctx: str | None = None,
     ) -> str | None:
         parts = [
             p
@@ -1113,6 +1117,12 @@ class AgentManager:
             browser_ctx = self._build_browser_context(
                 session.dashboard_id, selected_browser_ids=selected_browser_ids
             )
+            try:
+                from backend.apps.memory.memory import memory_context
+
+                memory_ctx = memory_context(prompt)
+            except Exception:
+                memory_ctx = None
             global_settings = load_settings()
             composed_prompt = self._compose_system_prompt(
                 global_settings.default_system_prompt,
@@ -1121,6 +1131,7 @@ class AgentManager:
                 connected_tools_ctx,
                 outputs_ctx,
                 browser_ctx,
+                memory_ctx,
             )
 
             if session.mode == "view-builder":
