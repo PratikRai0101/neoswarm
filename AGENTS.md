@@ -39,19 +39,18 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 | Phase 1: Fork + Rebrand | ✅ Complete | NeoSwarm branding, icon, and Tauri v2 desktop shell |
 | Phase 2: Native Agent System | ✅ Complete | Provider-agnostic streaming AgentLoop, tools, approvals, and persistence |
 | Phase 3: Orchestrator Agent | ✅ Complete | Durable mission API/UI with parallel or sequential workers |
-| Phase 4: CLI + TUI | 🟡 TUI complete / CLI partial | Streaming Textual TUI is usable; legacy Click commands still need completion |
+| Phase 4: CLI + TUI | ✅ Complete | Streaming Textual TUI and legacy Click commands are covered by the CLI test suite |
 | Phase 5: Packaging | 🟡 Pipeline complete | Bundled PyInstaller backend and Linux AppImage/deb targets are configured; release artifacts still need target verification |
 | Phase 6: Provider Auth | 🟡 API-key auth complete | Secure settings/keychain storage is complete; direct model-provider OAuth is not implemented |
 | Phase 7: Enhanced TUI | ✅ Complete | Session rail, streaming transcript, command center, approvals, and reconnecting transport |
-| Phase 8: Native App Runtime | 🔄 In Progress | Tauri bridge, MCP runtime execution, native browser control, and release hardening |
+| Phase 8: Native App Runtime | 🔄 In Progress | Tauri bridge, browser cards, MCP execution, memory, automations, and release hardening |
 
 ### Current implementation gaps (2026-08-02)
 
-- `MCPClientManager` exists but the native `AgentLoop` still needs to connect MCP servers and route `mcp__...` tool calls through it.
-- The Tauri shell launches the backend, but parts of the frontend still use Electron-only APIs (`window.neoswarm`, `<webview>`, preload paths, and native capture hooks).
-- Browser cards have a basic iframe fallback; full Tauri webview control is not complete.
-- The legacy Click CLI has placeholder/obsolete commands; the Textual TUI is the supported terminal client.
-- Long-term memory, scheduled tasks, image generation, native OS control, terminal tabs, SSH, and dedicated Git workflows remain roadmap work.
+- Tauri updater metadata and update-install flow still need to be wired and smoke-tested.
+- Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
+- Release artifacts are configured for Linux AppImage/deb, but packaged smoke tests and other target builds remain.
+- Native OS computer control, image generation, artifact viewing, terminal tabs, SSH, and dedicated Git/PR workflows remain roadmap work.
 
 ---
 
@@ -127,7 +126,7 @@ The orchestrator supports **both sequential and parallel** execution modes:
 
 ### Computer Use
 NeoSwarm currently has a browser-agent implementation and browser cards, but the runtime path is still being completed:
-- **Browser Automation** 🟡 (Partial): Browser-agent loops and browser-card actions exist; native AgentLoop MCP routing and Tauri webview control remain.
+- **Browser Automation** ✅: Browser-agent loops, MCP routing, and Tauri native child webviews are implemented; cross-platform command/lifecycle testing remains.
 - **Native App Control** 🔄 (Future): Controls native applications (Linux first, then macOS).
 
 ### Environment Variables
@@ -181,10 +180,10 @@ NeoSwarm currently has a browser-agent implementation and browser cards, but the
 | Computer Use | ✅ macOS app control | 🟡 Browser agent/card actions; native OS control remains future | High |
 | In-app Browser | ✅ Local servers + web | 🟡 Basic iframe fallback; native Tauri webview/control remains | High |
 | Image Generation | ✅ gpt-image-1.5 | 🔄 Future tool | Low |
-| Memory | ✅ Persistent | 🟡 Persisted sessions only; long-term memory remains | Medium |
-| 90+ Plugins | ✅ MCP servers | 🟡 Registry/configuration exists; native runtime execution is in progress | High |
+| Memory | ✅ Persistent | ✅ Local memory store, relevance context, tools, API, and Memory workspace | Medium |
+| 90+ Plugins | ✅ MCP servers | ✅ Registry/configuration, discovery, schemas, permissions, and native runtime execution | High |
 | Multi-agent | ✅ Parallel | ✅ Mission workspace with sequential/parallel workers; in-chat delegation follows MCP work | Done |
-| Automations | ✅ Scheduled tasks | 🔄 Future | Low |
+| Automations | ✅ Scheduled tasks | ✅ Durable interval/one-time schedules, agent tools, REST API, and Automations workspace | Low |
 | Git Integration | ✅ PR review, commits | 🟡 Bash and optional worktrees; dedicated Git workflows remain | Medium |
 | Artifact Viewer | ✅ PDF, spreadsheets | 🔄 Future | Low |
 | Terminal | ✅ Multiple tabs | 🔄 Future | Low |
@@ -213,14 +212,14 @@ NeoSwarm currently has a browser-agent implementation and browser cards, but the
 | Feature | Status | Description |
 |---------|--------|-------------|
 | Multi-agent | ✅ | Mission orchestrator coordinates workers; in-chat delegation is being wired through MCP |
-| Browser Agent | 🟡 | Browser-agent loop exists; Tauri/browser runtime path is incomplete |
-| MCP Tools | 🟡 | Registry, configuration, and schemas exist; native call routing remains |
+| Browser Agent | ✅ | Browser-agent loop, MCP execution, browser cards, and Tauri child-webview rendering |
+| MCP Tools | ✅ | Registry, discovery, schemas, permissions, and native call routing |
 | Sessions | ✅ | Chat session persistence and searchable history |
 | Model Switching | ✅ | Per-session switching with provider-aware fork handling |
 | Auth System | ✅ | API-key settings, keychain storage, redaction, and CLI/UI flows |
-| In-app Browser | 🟡 | Browser cards and iframe fallback; native Tauri webview remains |
-| Memory | 🔄 | Only session persistence currently |
-| Scheduled Tasks | 🔄 | Automation |
+| In-app Browser | 🟡 | Native Tauri child-webview rendering exists; command/control parity and packaging tests remain |
+| Memory | ✅ | User-controlled local memories with search, editing, deletion, tools, and prompt context |
+| Scheduled Tasks | ✅ | Durable interval/one-time automation with manual run controls |
 | Git Tools | 🟡 | Bash and safe worktree isolation; dedicated Git UX remains |
 | Image Gen | 🔄 | Future |
 
@@ -250,20 +249,24 @@ NeoSwarm currently has a browser-agent implementation and browser cards, but the
 - [x] Full message history
 - [x] Tool output panel
 - [x] Settings panel
-- [~] In-app browser: basic iframe/browser cards exist; native Tauri webview and automation bridge remain
-- [~] Tauri frontend bridge: backend sidecar exists; updater, native capture, and Electron compatibility APIs remain
-- [~] MCP runtime: connect configured servers and execute their tools from the native loop
+- [x] In-app browser visual surface through Tauri child webviews
+- [~] Browser command/control parity and cross-platform lifecycle testing
+- [~] Tauri frontend bridge: backend sidecar and browser bridge exist; updater and native capture remain
+- [x] MCP runtime: connect configured servers and execute their tools from the native loop
+- [x] Persistent memory workspace and relevant prompt context
+- [x] Durable automations workspace and scheduler lifecycle
 
 ### Phase 10: Advanced Features (Low Priority)
-- [ ] Memory system beyond session persistence
-- [ ] Scheduled/automated tasks
-- [~] More MCP server integrations: registry and setup exist; runtime execution is being completed
+- [x] Memory system beyond session persistence
+- [x] Scheduled/automated tasks
+- [x] MCP runtime execution for configured integrations
 - [ ] Image generation tool
 - [ ] Native Linux/macOS application control
 - [ ] Dedicated Git/PR workflow
 - [ ] Artifact viewer for PDF/spreadsheets
 - [ ] Multi-tab terminal
 - [ ] SSH workspaces
+- [ ] Tauri updater and release-install smoke tests
 
 ### Phase 11: Standalone Binary (High Priority)
 - [x] Fix backend not spawning for standalone binary (use bundled executable or venv Python)
@@ -429,7 +432,9 @@ neoswarm server           # Start backend server
 - MCP server names: `neoswarm-browser-agent`, `neoswarm-invoke-agent`
 - Default model: `sonnet` (Anthropic Sonnet 4.6); Ollama is the keyless local option and is selected when an Ollama model is chosen
 - Provider credentials: environment variables take precedence, then the platform keychain/settings store
-- Native AgentLoop built-ins: filesystem, shell, question, and web tools; MCP/browser delegation is being integrated through `MCPClientManager`
+- Native AgentLoop built-ins: filesystem, shell, question, web, memory, and scheduling tools; configured MCP/browser delegation runs through `MCPClientManager`
+- Persistent memory lives under the configured data root in `memory/`; schedules live under `schedules/`
+- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 129 tests pass)
 
 ---
 
