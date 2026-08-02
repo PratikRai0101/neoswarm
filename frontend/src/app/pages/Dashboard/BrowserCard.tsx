@@ -46,6 +46,10 @@ import {
   isTauriRuntime,
   removeTauriBrowserWebviews,
   syncTauriBrowserWebviews,
+  navigateTauriBrowser,
+  reloadTauriBrowser,
+  historyTauriBrowser,
+  getTauriBrowserUrl,
 } from '@/shared/tauriBrowser';
 import BrowserAgentOverlay from './BrowserAgentOverlay';
 import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
@@ -255,6 +259,19 @@ const BrowserCard: React.FC<Props> = ({
 
   useEffect(() => {
     if (!isTauri) return;
+    const pollUrl = () => {
+      void getTauriBrowserUrl(browserId, activeTabId).then((url) => {
+        if (url && url !== activeUrl) {
+          dispatch(updateBrowserTabUrl({ browserId, tabId: activeTabId, url }));
+        }
+      }).catch(() => {});
+    };
+    const timer = window.setInterval(pollUrl, 1000);
+    return () => window.clearInterval(timer);
+  }, [browserId, activeTabId, activeUrl, dispatch]);
+
+  useEffect(() => {
+    if (!isTauri) return;
     const body = browserBodyRef.current;
     if (!body) return;
     let disposed = false;
@@ -292,6 +309,10 @@ const BrowserCard: React.FC<Props> = ({
       wv.loadURL(finalUrl).catch((err: Error) => {
         if (!err.message?.includes('ERR_ABORTED')) console.error('Navigation failed:', err);
       });
+    } else if (isTauri) {
+      void navigateTauriBrowser(browserId, activeTabId, finalUrl).catch((error) => {
+        console.warn('Tauri browser navigation failed:', error);
+      });
     }
     dispatch(updateBrowserTabUrl({ browserId, tabId: activeTabId, url: finalUrl }));
   }, [browserId, activeTabId, dispatch]);
@@ -305,18 +326,21 @@ const BrowserCard: React.FC<Props> = ({
 
   const handleBack = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    webviewMap.current.get(activeTabId)?.goBack();
-  }, [activeTabId]);
+    if (isTauri) void historyTauriBrowser(browserId, activeTabId, 'back').catch(() => {});
+    else webviewMap.current.get(activeTabId)?.goBack();
+  }, [browserId, activeTabId]);
 
   const handleForward = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    webviewMap.current.get(activeTabId)?.goForward();
-  }, [activeTabId]);
+    if (isTauri) void historyTauriBrowser(browserId, activeTabId, 'forward').catch(() => {});
+    else webviewMap.current.get(activeTabId)?.goForward();
+  }, [browserId, activeTabId]);
 
   const handleRefresh = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    webviewMap.current.get(activeTabId)?.reload();
-  }, [activeTabId]);
+    if (isTauri) void reloadTauriBrowser(browserId, activeTabId).catch(() => {});
+    else webviewMap.current.get(activeTabId)?.reload();
+  }, [browserId, activeTabId]);
 
   const handleRemove = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();

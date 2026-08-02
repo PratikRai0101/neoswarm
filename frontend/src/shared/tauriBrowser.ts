@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebview, Webview } from '@tauri-apps/api/webview';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 
@@ -29,7 +30,7 @@ function key(browserId: string, tabId: string): string {
   return `${browserId}:${tabId}`;
 }
 
-function label(browserId: string, tabId: string): string {
+export function tauriBrowserLabel(browserId: string, tabId: string): string {
   return `browser-${browserId}-${tabId}`.replace(/[^a-zA-Z0-9/_:-]/g, '-');
 }
 
@@ -62,7 +63,7 @@ async function createManaged(
   rect: TauriBrowserRect,
 ): Promise<ManagedWebview> {
   const current = getCurrentWebview();
-  const native = new Webview(current.window, label(browserId, tab.id), {
+  const native = new Webview(current.window, tauriBrowserLabel(browserId, tab.id), {
     url: tab.url,
     x: rect.x,
     y: rect.y,
@@ -150,6 +151,22 @@ export async function syncTauriBrowserWebviews(
   );
   const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
   if (failure) throw failure.reason;
+}
+
+export async function navigateTauriBrowser(browserId: string, tabId: string, url: string): Promise<void> {
+  await invoke('browser_navigate', { label: tauriBrowserLabel(browserId, tabId), url });
+}
+
+export async function reloadTauriBrowser(browserId: string, tabId: string): Promise<void> {
+  await invoke('browser_reload', { label: tauriBrowserLabel(browserId, tabId) });
+}
+
+export async function historyTauriBrowser(browserId: string, tabId: string, direction: 'back' | 'forward'): Promise<void> {
+  await invoke('browser_history', { label: tauriBrowserLabel(browserId, tabId), direction });
+}
+
+export async function getTauriBrowserUrl(browserId: string, tabId: string): Promise<string> {
+  return invoke<string>('browser_url', { label: tauriBrowserLabel(browserId, tabId) });
 }
 
 export async function removeTauriBrowserWebviews(browserId: string): Promise<void> {

@@ -1,6 +1,8 @@
-import { getWebview, type BrowserWebview } from './browserRegistry';
+import { invoke } from '@tauri-apps/api/core';
+import { getWebview, getActiveTabId, type BrowserWebview } from './browserRegistry';
 import { dashboardWs } from './ws/WebSocketManager';
 import { resolveInput } from './resolveUrl';
+import { isTauriRuntime, tauriBrowserLabel } from './tauriBrowser';
 
 let initialized = false;
 
@@ -609,9 +611,138 @@ async function handleEvaluate(wv: BrowserWebview, params: Record<string, any>): 
   }
 }
 
+async function tauriEval(label: string, script: string): Promise<any> {
+  return invoke('browser_eval', { label, script });
+}
+
+async function tauriUrl(label: string): Promise<string> {
+  return invoke<string>('browser_url', { label });
+}
+
+function resultText(value: any): string {
+  if (typeof value === 'string') return value;
+  const serialized = JSON.stringify(value, null, 2);
+  return serialized === undefined ? 'undefined' : serialized;
+}
+
+async function handleTauriBrowserAction(
+  action: string,
+  browserId: string,
+  tabId: string,
+  params: Record<string, any>,
+): Promise<Record<string, any>> {
+  const label = tauriBrowserLabel(browserId, tabId);
+  const url = () => tauriUrl(label);
+
+  switch (action) {
+    case 'screenshot':
+      return { error: 'Screenshots for Tauri child webviews are not available on this platform yet.' };
+    case 'navigate': {
+      const target = params.url as string;
+      if (!target) return { error: 'url parameter is required' };
+      const resolved = resolveInput(target);
+      await invoke('browser_navigate', { label, url: resolved });
+      return { text: `Navigated to ${resolved}`, url: resolved };
+    }
+    case 'get_text': {
+      const value = await tauriEval(label, '(()=>({text:document.body?.innerText?.substring(0,15000)||"",url:location.href,title:document.title}))()');
+      return value || { text: '', url: await url() };
+    }
+    case 'click': {
+      const selector = params.selector as string;
+      if (!selector) return { error: 'selector parameter is required' };
+      const safe = JSON.stringify(selector);
+      return (await tauriEval(label, `(()=>{const el=document.querySelector(${safe});if(!el)return {error:"Element not found: "+${safe}};el.scrollIntoView({block:"center"});el.click();return {text:"Clicked element: "+el.tagName.toLowerCase(),url:location.href,clickX:50,clickY:50}})()`)) || {};
+    }
+    case 'type': {
+      const selector = params.selector as string;
+      const text = params.text as string;
+      if (!selector) return { error: 'selector parameter is required' };
+      if (text == null) return { error: 'text parameter is required' };
+      const safeSelector = JSON.stringify(selector);
+      const safeText = JSON.stringify(text);
+      return (await tauriEval(label, `(()=>{const el=document.querySelector(${safeSelector});if(!el)return {error:"Element not found: "+${safeSelector}};el.focus();if("value" in el)el.value=${safeText};else el.textContent=${safeText};el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));return {text:"Typed into: "+el.tagName.toLowerCase()}})()`)) || {};
+    }
+    case 'evaluate': {
+      const expression = params.expression as string;
+      if (!expression) return { error: 'expression parameter is required' };
+      const value = await tauriEval(label, `(()=>(${expression}))()`);
+      return { text: resultText(value), url: await url() };
+    }
+    case 'get_elements': {
+      const selector = (params.selector as string) || 'body';
+      const safe = JSON.stringify(selector);
+      const value = await tauriEval(label, `(()=>{const root=document.querySelector(${safe})||document.body;const nodes=[...root.querySelectorAll("a,button,input,textarea,select,[role=button],[tabindex]")].slice(0,100);return {elements:nodes.map((el,i)=>({index:i+1,tag:el.tagName.toLowerCase(),text:(el.textContent||"").trim().substring(0,120),placeholder:el.placeholder||null,ariaLabel:el.getAttribute("aria-label"),role:el.getAttribute("role")})),total:nodes.length,url:location.href,title:document.title}})()`);
+      return { text: resultText(value), ...(value || {}) };
+    }
+    case 'scroll': {
+      const direction = params.direction === 'up' ? -1 : 1;
+      const amount = Math.max(1, Number(params.amount) || 500);
+      const value = await tauriEval(label, `(()=>{const delta=${direction * amount};const root=document.scrollingElement||document.documentElement;root.scrollBy({top:delta,behavior:"smooth"});return {text:"Scrolled",scrollTop:root.scrollTop,url:location.href}})()`);
+      return value || {};
+    }
+    case 'wait': {
+      await new Promise((resolve) => window.setTimeout(resolve, Math.min(30000, Math.max(0, Number(params.milliseconds) || 500))));
+      return { text: 'Wait complete', url: await url() };
+    }
+    case 'press_key': {
+      const key = String(params.key || '');
+      if (!key) return { error: 'key parameter is required' };
+      const safe = JSON.stringify(key);
+      return (await tauriEval(label, `(()=>{const target=document.activeElement||document.body;target.dispatchEvent(new KeyboardEvent("keydown",{key:${safe},code:${safe},bubbles:true}));target.dispatchEvent(new KeyboardEvent("keyup",{key:${safe},code:${safe},bubbles:true}));return {text:"Pressed ${key.replace(/"/g, '\\"')}"}})()`)) || {};
+    }
+    case 'list_interactives': {
+      const value = await tauriEval(label, '(()=>{const nodes=[...document.querySelectorAll("a,button,input,textarea,select,[role=button],[tabindex]")].filter(el=>!el.disabled).slice(0,100);const elements=nodes.map((el,index)=>({index:index+1,role:el.getAttribute("role")||el.tagName.toLowerCase(),name:(el.getAttribute("aria-label")||el.innerText||el.placeholder||"").trim().substring(0,80)}));return {text:elements.map(el=>`[${el.index}]<${el.role} "${el.name}">`).join("\\n")||"No interactive elements found on this page.",elements,url:location.href}})()');
+      return value || {};
+    }
+    case 'click_index': {
+      const index = Number(params.index);
+      if (!Number.isFinite(index) || index < 1) return { error: 'index parameter is required and must be a positive integer' };
+      const value = await tauriEval(label, `(()=>{const nodes=[...document.querySelectorAll("a,button,input,textarea,select,[role=button],[tabindex]")].filter(el=>!el.disabled);const el=nodes[${Math.floor(index) - 1}];if(!el)return {error:"Index ${Math.floor(index)} is not available"};el.scrollIntoView({block:"center"});el.click();return {text:"Clicked index ${Math.floor(index)}",clickX:50,clickY:50,url:location.href}})()`);
+      return value || {};
+    }
+    case 'batch': {
+      const actions = Array.isArray(params.actions) ? params.actions.slice(0, 5) : [];
+      const results = [];
+      for (const item of actions) {
+        if (!item || item.type === 'batch') continue;
+        results.push({ type: item.type, result: await handleTauriBrowserAction(item.type, browserId, tabId, item.params || {}) });
+      }
+      return { results, text: resultText(results), url: await url() };
+    }
+    default:
+      return { error: `Unknown browser action: ${action}` };
+  }
+}
+
 async function handleBrowserCommand(data: Record<string, any>) {
   const { request_id, action, browser_id, tab_id, params = {} } = data;
   if (!request_id) return;
+
+  const detail = params.url || params.selector || params.expression || undefined;
+  setActivity(browser_id, { action: action as BrowserAction, detail });
+
+  if (isTauriRuntime()) {
+    const effectiveTabId = tab_id || getActiveTabId(browser_id);
+    let result: Record<string, any>;
+    try {
+      result = effectiveTabId
+        ? await handleTauriBrowserAction(action, browser_id, effectiveTabId, params)
+        : { error: `Browser card '${browser_id}' has no active tab` };
+      if ((action === 'click' || action === 'click_index') && result.clickX != null && result.clickY != null) {
+        setActivity(browser_id, {
+          action: action as BrowserAction,
+          detail,
+          coords: { xPercent: result.clickX, yPercent: result.clickY },
+        });
+      }
+    } catch (err: any) {
+      result = { error: `Browser command failed: ${err?.message || String(err)}` };
+    }
+    setActivity(browser_id, null);
+    dashboardWs.send('browser:result', { request_id, ...result });
+    return;
+  }
 
   const wv = getWebview(browser_id, tab_id || undefined);
   if (!wv) {
@@ -621,9 +752,6 @@ async function handleBrowserCommand(data: Record<string, any>) {
     });
     return;
   }
-
-  const detail = params.url || params.selector || params.expression || undefined;
-  setActivity(browser_id, { action: action as BrowserAction, detail });
 
   let result: Record<string, any>;
   try {
