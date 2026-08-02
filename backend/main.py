@@ -36,7 +36,7 @@ def _start_parent_watchdog() -> None:
 _start_parent_watchdog()
 
 from fastapi.responses import JSONResponse
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from backend.config.Apps import MainApp
 from backend.apps.health.health import health
@@ -53,6 +53,7 @@ from backend.apps.mcp_registry.mcp_registry import mcp_registry
 from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
 from backend.apps.artifacts.artifacts import artifacts
+from backend.apps.terminals.terminals import terminals, terminal_manager
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.analytics.analytics import analytics
 from fastapi.middleware.cors import CORSMiddleware
@@ -74,6 +75,7 @@ main_app = MainApp(
         skill_registry,
         outputs,
         artifacts,
+        terminals,
         dashboards,
         analytics,
     ]
@@ -118,6 +120,42 @@ def _websocket_origin_allowed(websocket: WebSocket) -> bool:
     """Allow trusted browser origins and non-browser clients without Origin."""
     origin = websocket.headers.get("origin")
     return origin is None or origin in _allowed_origins
+
+
+@app.websocket("/ws/terminals/{terminal_id}")
+async def websocket_terminal(websocket: WebSocket, terminal_id: str):
+    if not _websocket_origin_allowed(websocket):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
+    try:
+        await terminal_manager.connect(terminal_id, websocket)
+    except HTTPException:
+        await websocket.close(code=1008, reason="Terminal not found")
+        return
+
+    try:
+        while True:
+            raw_message = await websocket.receive_text()
+            try:
+                message = json.loads(raw_message)
+            except (json.JSONDecodeError, TypeError):
+                await websocket.send_json({"event": "terminal:error", "data": {"error": "Invalid JSON message"}})
+                continue
+            if not isinstance(message, dict):
+                await websocket.send_json({"event": "terminal:error", "data": {"error": "Message must be an object"}})
+                continue
+            try:
+                response = await terminal_manager.handle_message(terminal_id, message)
+            except (ValueError, TypeError) as exc:
+                await websocket.send_json({"event": "terminal:error", "data": {"error": str(exc)}})
+                continue
+            if response:
+                await websocket.send_json(response)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        terminal_manager.disconnect(terminal_id, websocket)
 
 
 @app.websocket("/ws/agents/{session_id}")
