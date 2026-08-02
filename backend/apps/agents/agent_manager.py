@@ -83,6 +83,7 @@ FULL_TOOLS = [
     "GitDiff",
     "GitCommit",
     "ComputerUse",
+    "PublishArtifact",
     "WebSearch",
     "WebFetch",
     "NotebookEdit",

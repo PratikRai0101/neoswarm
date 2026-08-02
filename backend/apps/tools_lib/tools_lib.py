@@ -116,7 +116,7 @@ async def list_builtin_tools():
     return {"tools": [t.model_dump() for t in BUILTIN_TOOLS]}
 
 
-_DEFAULT_BUILTIN_PERMISSIONS = {"ComputerUse": "ask"}
+_DEFAULT_BUILTIN_PERMISSIONS = {"ComputerUse": "ask", "PublishArtifact": "ask"}
 
 
 def load_builtin_permissions() -> dict[str, str]:

@@ -52,6 +52,7 @@ from backend.apps.settings.settings import settings
 from backend.apps.mcp_registry.mcp_registry import mcp_registry
 from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
+from backend.apps.artifacts.artifacts import artifacts
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.analytics.analytics import analytics
 from fastapi.middleware.cors import CORSMiddleware
@@ -72,6 +73,7 @@ main_app = MainApp(
         mcp_registry,
         skill_registry,
         outputs,
+        artifacts,
         dashboards,
         analytics,
     ]
