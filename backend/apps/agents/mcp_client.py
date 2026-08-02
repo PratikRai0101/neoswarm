@@ -78,6 +78,21 @@ class MCPClientManager:
             logger.warning(f"Failed to connect MCP server {server_name}: {e}")
             return []
 
+    async def connect_all(self, servers: dict[str, dict]) -> list[ToolSchema]:
+        """Connect configured servers and return their discovered tool schemas.
+
+        A failed server is isolated from the rest of the session: ``connect``
+        logs the failure and returns no schemas, allowing the agent to continue
+        with the tools that did connect.
+        """
+        if not servers:
+            return []
+
+        results = await asyncio.gather(
+            *(self.connect(name, config) for name, config in servers.items())
+        )
+        return [schema for server_tools in results for schema in server_tools]
+
     async def _connect_stdio(self, server_name: str, config: dict) -> MCPConnection:
         """Connect to a stdio MCP server (spawns a subprocess)."""
         from mcp import ClientSession

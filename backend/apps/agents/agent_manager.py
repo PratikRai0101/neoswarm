@@ -1088,6 +1088,7 @@ class AgentManager:
             return {"continue_": True}
 
         provider = None
+        mcp_manager = None
         try:
             _, mode_sys_prompt, _ = self._resolve_mode(session.mode)
             from backend.apps.agents.providers.registry import create_provider
@@ -1195,11 +1196,23 @@ class AgentManager:
                     "type": "stdio",
                 }
 
+            if mcp_servers:
+                from backend.apps.agents.mcp_client import MCPClientManager
+
+                mcp_manager = MCPClientManager()
+                await mcp_manager.__aenter__()
+                discovered_mcp_schemas = await mcp_manager.connect_all(mcp_servers)
+                mcp_schemas_by_name = {
+                    schema.name: schema for schema in discovered_mcp_schemas
+                }
+            else:
+                mcp_schemas_by_name = {}
+
             effective_allowed = [
                 t
                 for t in session.allowed_tools
                 if t in FULL_TOOLS
-                and _builtin_perms.get(t, "always_allow") == "always_allow"
+                and _builtin_perms.get(t, "always_allow") != "deny"
             ]
 
             effective_disallowed = [
@@ -1212,11 +1225,11 @@ class AgentManager:
                     if name == "neoswarm-browser-agent":
                         for bt in _browser_delegation_tools:
                             policy = _builtin_perms.get(bt, "always_allow")
-                            if policy == "always_allow":
+                            if policy != "deny":
                                 effective_allowed.append(
                                     f"mcp__neoswarm-browser-agent__{bt}"
                                 )
-                            elif policy == "deny":
+                            else:
                                 effective_disallowed.append(
                                     f"mcp__neoswarm-browser-agent__{bt}"
                                 )
@@ -1225,11 +1238,11 @@ class AgentManager:
                     if name == "neoswarm-invoke-agent":
                         for it in _invoke_agent_tools:
                             policy = _builtin_perms.get(it, "always_allow")
-                            if policy == "always_allow":
+                            if policy != "deny":
                                 effective_allowed.append(
                                     f"mcp__neoswarm-invoke-agent__{it}"
                                 )
-                            elif policy == "deny":
+                            else:
                                 effective_disallowed.append(
                                     f"mcp__neoswarm-invoke-agent__{it}"
                                 )
@@ -1250,12 +1263,19 @@ class AgentManager:
                         known = _get_all_known_tool_names(tool_def)
                         for tn in known - denied:
                             policy = tool_def.tool_permissions.get(tn, "ask")
-                            if policy == "always_allow":
+                            if policy != "deny":
                                 effective_allowed.append(f"mcp__{name}__{tn}")
                         for tn in denied:
                             effective_disallowed.append(f"mcp__{name}__{tn}")
                     else:
                         effective_allowed.append(f"mcp__{name}__*")
+
+            # Prefer schemas discovered from the live MCP connection. This
+            # also makes internal browser/invoke servers available to the
+            # native AgentLoop instead of leaving them as deferred names.
+            for schema_name in mcp_schemas_by_name:
+                if schema_name not in effective_allowed:
+                    effective_allowed.append(schema_name)
 
             # Log effective tool lists
             google_allowed = [t for t in effective_allowed if "google-workspace" in t]
@@ -1305,6 +1325,11 @@ class AgentManager:
 
                 for name in tool_names:
                     if name.startswith("mcp__"):
+                        discovered = mcp_schemas_by_name.get(name)
+                        if discovered is not None:
+                            schemas.append(discovered)
+                            continue
+
                         parts = name.split("__")
                         if len(parts) >= 3:
                             server_slug = parts[1]
@@ -1354,14 +1379,14 @@ class AgentManager:
                     except Exception as e:
                         return [{"type": "text", "text": f"Tool error: {e}"}]
 
-                # MCP tools are handled separately via subprocess
-                if tool_name.startswith("mcp__"):
-                    return [
-                        {
-                            "type": "text",
-                            "text": f"MCP tool '{tool_name}' — execution handled by MCP server.",
-                        }
-                    ]
+                if tool_name.startswith("mcp__") and mcp_manager is not None:
+                    parsed = mcp_manager.parse_mcp_tool_name(tool_name)
+                    if parsed is not None:
+                        server_name, bare_tool_name = parsed
+                        return await mcp_manager.call_tool(
+                            server_name, bare_tool_name, tool_input
+                        )
+                    return [{"type": "text", "text": f"Invalid MCP tool name: {tool_name}"}]
 
                 # Unknown tool
                 return [{"type": "text", "text": f"Unknown tool: {tool_name}"}]
@@ -1369,7 +1394,13 @@ class AgentManager:
             async def _hitl_handler(
                 tool_name: str, tool_input: dict
             ) -> tuple[bool, dict | None]:
-                """HITL handler using the existing _request_user_approval closure."""
+                """Apply the configured policy, requesting approval only when needed."""
+                policy = _get_effective_policy(tool_name)
+                if policy == "deny":
+                    return False, None
+                if policy == "always_allow":
+                    return True, tool_input
+
                 decision = await _request_user_approval(tool_name, tool_input)
                 if decision.get("behavior") == "allow":
                     return True, decision.get("updated_input")
@@ -1531,6 +1562,11 @@ class AgentManager:
                     await provider.close()
                 except Exception as close_error:
                     logger.debug("Provider cleanup failed: %s", close_error)
+            if mcp_manager is not None:
+                try:
+                    await mcp_manager.__aexit__(None, None, None)
+                except Exception as close_error:
+                    logger.debug("MCP cleanup failed: %s", close_error)
 
     async def _stream_text(
         self, session_id: str, msg_id: str, text: str, delay: float = 0.03
