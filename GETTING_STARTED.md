@@ -95,7 +95,9 @@ needs the backend venv described above.
 
 The **Memory** workspace stores user-approved durable context locally. The
 **Automations** workspace creates interval or one-time agent runs and also
-supports manual runs. Both are available from the native app and REST API.
+supports manual runs. The **Git** workspace shows branches, diffs, changed
+files, and supports explicit commits after review. All three are available from
+the native app and REST API.
 
 ### Signed releases
 

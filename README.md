@@ -31,8 +31,11 @@ configured MCP tools.
   approval commands, and reconnecting WebSocket transport
 - Multi-agent mission workspace and API with sequential or parallel workers
 - Optional per-worker git worktree isolation with dirty-worktree protection
-- Tauri desktop shell with a self-contained PyInstaller backend executable;
-  current release targets are **Linux AppImage and deb**
+- Tauri desktop shell with native browser child webviews, updater support, and a
+  self-contained PyInstaller backend executable; current release targets are
+  **Linux AppImage and deb**
+- Local memory workspace, durable automations, and Git workspace/API with
+  explicit commit controls
 
 ## Quick start
 
@@ -66,11 +69,11 @@ a waiting tool approval.
 
 ### Tauri development
 
-Install the Tauri v2 CLI, complete the backend/frontend setup above, then run:
+Complete the backend/frontend setup above, then run:
 
 ```bash
-cd src-tauri
-cargo tauri dev
+cd frontend
+npm exec tauri -- dev --config ../src-tauri/tauri.conf.json
 ```
 
 Release bundles currently target Linux. The build installs the pinned build
@@ -78,9 +81,11 @@ requirements, creates a self-contained backend executable, builds the frontend,
 and bundles both into the app:
 
 ```bash
-cd src-tauri
-cargo tauri build
+npm --prefix frontend exec -- tauri build --config src-tauri/tauri.conf.json
 ```
+
+Tagging a commit with `v*` starts the signed release workflow. Configure the
+`TAURI_SIGNING_PRIVATE_KEY` and optional password repository secrets first.
 
 The resulting desktop installation does not require the user to install Python
 or backend packages.
@@ -122,11 +127,11 @@ platform application-data directory.
 # Backend and TUI tests
 PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q
 
-# Web production build
-(cd frontend && npm run build)
+# Web type-check and production build
+(cd frontend && npm run typecheck && npm run build)
 
 # Tauri type/build check
-cargo check --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path src-tauri/Cargo.toml --locked
 ```
 
 ## License

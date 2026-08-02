@@ -50,7 +50,7 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 - Tauri updater metadata and update-install flow still need to be wired and smoke-tested.
 - Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
 - Release artifacts are configured for Linux AppImage/deb, but packaged smoke tests and other target builds remain.
-- Native OS computer control, image generation, artifact viewing, terminal tabs, SSH, and dedicated Git/PR workflows remain roadmap work.
+- Native OS computer control, image generation, artifact viewing, terminal tabs, SSH, and dedicated Git/PR hosting workflows remain roadmap work; local Git inspection and commits are implemented.
 
 ---
 
@@ -184,7 +184,7 @@ NeoSwarm currently has a browser-agent implementation and browser cards, but the
 | 90+ Plugins | ✅ MCP servers | ✅ Registry/configuration, discovery, schemas, permissions, and native runtime execution | High |
 | Multi-agent | ✅ Parallel | ✅ Mission workspace with sequential/parallel workers; in-chat delegation follows MCP work | Done |
 | Automations | ✅ Scheduled tasks | ✅ Durable interval/one-time schedules, agent tools, REST API, and Automations workspace | Low |
-| Git Integration | ✅ PR review, commits | 🟡 Bash and optional worktrees; dedicated Git workflows remain | Medium |
+| Git Integration | ✅ PR review, commits | ✅ Git workspace/API/tools for status, diff, branches, and explicit commits; PR hosting remains | Medium |
 | Artifact Viewer | ✅ PDF, spreadsheets | 🔄 Future | Low |
 | Terminal | ✅ Multiple tabs | 🔄 Future | Low |
 | SSH | ✅ Remote devboxes | 🔄 Future | Low |
@@ -220,7 +220,7 @@ NeoSwarm currently has a browser-agent implementation and browser cards, but the
 | In-app Browser | 🟡 | Native Tauri child-webview rendering exists; command/control parity and packaging tests remain |
 | Memory | ✅ | User-controlled local memories with search, editing, deletion, tools, and prompt context |
 | Scheduled Tasks | ✅ | Durable interval/one-time automation with manual run controls |
-| Git Tools | 🟡 | Bash and safe worktree isolation; dedicated Git UX remains |
+| Git Tools | ✅ | Git workspace plus native status, diff, and explicit commit tools; PR hosting remains |
 | Image Gen | 🔄 | Future |
 
 ---
@@ -262,7 +262,7 @@ NeoSwarm currently has a browser-agent implementation and browser cards, but the
 - [x] MCP runtime execution for configured integrations
 - [ ] Image generation tool
 - [ ] Native Linux/macOS application control
-- [ ] Dedicated Git/PR workflow
+- [~] Dedicated Git/PR workflow: local Git workspace is complete; hosted PR review remains
 - [ ] Artifact viewer for PDF/spreadsheets
 - [ ] Multi-tab terminal
 - [ ] SSH workspaces
@@ -432,7 +432,7 @@ neoswarm server           # Start backend server
 - MCP server names: `neoswarm-browser-agent`, `neoswarm-invoke-agent`
 - Default model: `sonnet` (Anthropic Sonnet 4.6); Ollama is the keyless local option and is selected when an Ollama model is chosen
 - Provider credentials: environment variables take precedence, then the platform keychain/settings store
-- Native AgentLoop built-ins: filesystem, shell, question, web, memory, and scheduling tools; configured MCP/browser delegation runs through `MCPClientManager`
+- Native AgentLoop built-ins: filesystem, shell, question, web, memory, scheduling, and Git tools; configured MCP/browser delegation runs through `MCPClientManager`
 - Persistent memory lives under the configured data root in `memory/`; schedules live under `schedules/`
 - Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 129 tests pass)
 
