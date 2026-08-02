@@ -18,9 +18,16 @@ from backend.config.paths import ARTIFACTS_DIR
 
 MAX_ARTIFACT_BYTES = 25 * 1024 * 1024
 _MEDIA_TYPE_OVERRIDES = {
+    ".csv": "text/csv",
+    ".json": "application/json",
     ".md": "text/markdown",
     ".markdown": "text/markdown",
+    ".log": "text/plain",
+    ".text": "text/plain",
     ".tsv": "text/tab-separated-values",
+    ".txt": "text/plain",
+    ".yaml": "text/yaml",
+    ".yml": "text/yaml",
 }
 _ARTIFACT_ID = re.compile(r"^[a-f0-9]{32}$")
 
