@@ -158,6 +158,20 @@ function isBashTool(name: string) {
   return name === 'Bash' || name === 'bash';
 }
 
+const ToolResultImages: React.FC<{ images: Array<{ data: string; media_type: string }> }> = ({ images }) => (
+  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, px: 1.5, pt: 1 }}>
+    {images.map((image, index) => (
+      <Box
+        key={`${image.media_type}-${index}`}
+        component="img"
+        src={`data:${image.media_type};base64,${image.data}`}
+        alt="Computer-use screenshot"
+        sx={{ maxWidth: '100%', maxHeight: 420, borderRadius: 1.5, border: '1px solid rgba(128,128,128,0.25)', objectFit: 'contain' }}
+      />
+    ))}
+  </Box>
+);
+
 export interface McpToolInfo {
   isMcp: boolean;
   serverSlug: string;
@@ -1268,6 +1282,7 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
     const showBody = expanded || isStreaming || browserAgentAutoExpand;
 
     const resultContent = result?.content;
+    const resultImages = result?.images || [];
     const hasStructuredResult =
       resultContent && typeof resultContent === 'object' && 'text' in resultContent;
     const resultRawText: string = hasStructuredResult
@@ -1905,6 +1920,7 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
                   browserId={input?.browser_id}
                 />
               )}
+              {resultImages.length > 0 && <ToolResultImages images={resultImages} />}
               {parsedResult && parsedResult.type === 'mcp' ? (
                 <McpResultCard parsed={parsedResult} compact />
               ) : parsedResult ? (
@@ -2117,6 +2133,7 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = React.memo(
               )}
 
               {/* Output */}
+              {resultImages.length > 0 && <ToolResultImages images={resultImages} />}
               {parsedResult && parsedResult.type === 'mcp' ? (
                 <McpResultCard parsed={parsedResult} />
               ) : parsedResult ? (

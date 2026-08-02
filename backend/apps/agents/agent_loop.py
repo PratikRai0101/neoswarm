@@ -306,10 +306,21 @@ class AgentLoop:
 
             # Emit tool result to frontend
             result_text = ""
+            result_images: list[dict] = []
             for block_item in result_content:
-                if isinstance(block_item, dict) and block_item.get("type") == "text":
+                if not isinstance(block_item, dict):
+                    continue
+                if block_item.get("type") == "text" and not result_text:
                     result_text = block_item.get("text", "")
-                    break
+                if block_item.get("type") == "image":
+                    source = block_item.get("source") or {}
+                    if source.get("type") == "base64" and source.get("data"):
+                        result_images.append(
+                            {
+                                "data": source["data"],
+                                "media_type": source.get("media_type", "image/png"),
+                            }
+                        )
 
             result_msg = Message(
                 role="tool_result",
@@ -318,6 +329,7 @@ class AgentLoop:
                     "tool_name": tc.name,
                     "elapsed_ms": elapsed_ms,
                 },
+                images=result_images or None,
             )
             await self.ws_emitter("agent:message", {
                 "message": result_msg.model_dump(mode="json"),
