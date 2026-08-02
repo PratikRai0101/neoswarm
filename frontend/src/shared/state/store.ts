@@ -17,6 +17,7 @@ import missionsReducer from './missionsSlice';
 import schedulesReducer from './schedulesSlice';
 import memoriesReducer from './memoriesSlice';
 import gitReducer from './gitSlice';
+import artifactsReducer from './artifactsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -38,6 +39,7 @@ export const store = configureStore({
     schedules: schedulesReducer,
     memories: memoriesReducer,
     git: gitReducer,
+    artifacts: artifactsReducer,
   },
 });
 

@@ -34,8 +34,9 @@ configured MCP tools.
 - Tauri desktop shell with native browser child webviews, updater support, and a
   self-contained PyInstaller backend executable; current release targets are
   **macOS DMG packages for Intel and Apple Silicon**
-- Local memory workspace, durable automations, and Git workspace/API with
-  explicit commit controls
+- Local memory workspace, durable automations, Git workspace/API with explicit
+  commit controls, and an approval-gated Artifact workspace for local previews,
+  downloads, and default-app opening
 - Optional approval-gated native desktop control (mouse, keyboard, scrolling,
   and screenshots) via the host computer adapter
 

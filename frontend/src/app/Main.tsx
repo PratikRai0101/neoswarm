@@ -26,6 +26,7 @@ import Missions from './pages/Missions/Missions';
 import Schedules from './pages/Schedules/Schedules';
 import Memories from './pages/Memories/Memories';
 import Git from './pages/Git/Git';
+import Artifacts from './pages/Artifacts/Artifacts';
 import OnboardingModal from './components/OnboardingModal';
 import { trackEvent, getLastAction, getLastPage, getTimeSpent } from '@/shared/analytics';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
@@ -260,6 +261,7 @@ const ThemedApp: React.FC = () => {
                   <Route path="/schedules" element={<Schedules />} />
                   <Route path="/memory" element={<Memories />} />
                   <Route path="/git" element={<Git />} />
+                  <Route path="/artifacts" element={<Artifacts />} />
                   <Route path="/customization" element={<Customization />} />
                   <Route path="/skills" element={<Skills />} />
                   <Route path="/actions" element={<Tools />} />
