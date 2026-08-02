@@ -15,6 +15,7 @@ import Alert from '@mui/material/Alert';
 import InputBase from '@mui/material/InputBase';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import RocketLaunchOutlinedIcon from '@mui/icons-material/RocketLaunchOutlined';
+import ScheduleIcon from '@mui/icons-material/Schedule';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import BuildIcon from '@mui/icons-material/Build';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -283,6 +284,7 @@ const AppShell: React.FC = () => {
   const isDashboardRoute = location.pathname === '/' || location.pathname.startsWith('/dashboard/');
   const isDashboardViewActive = location.pathname.startsWith('/dashboard/');
   const isMissionsRoute = location.pathname === '/missions';
+  const isSchedulesRoute = location.pathname === '/schedules';
   const isAppsRoute = location.pathname === '/apps' || location.pathname.startsWith('/apps/');
   const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
@@ -769,6 +771,35 @@ const AppShell: React.FC = () => {
                     color: isMissionsRoute ? c.text.primary : c.text.muted,
                     fontSize: '0.82rem',
                     fontWeight: isMissionsRoute ? 600 : 400,
+                  },
+                }}
+              />
+            </ListItemButton>
+          </Box>
+
+          {/* Automations */}
+          <Box sx={{ px: 1, mb: 0.25 }}>
+            <ListItemButton
+              onClick={() => navigate('/schedules')}
+              sx={{
+                borderRadius: 1.5,
+                py: 0.6,
+                px: 1.25,
+                bgcolor: isSchedulesRoute ? `${c.accent.primary}12` : 'transparent',
+                '&:hover': { bgcolor: isSchedulesRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <ListItemIcon sx={{ color: isSchedulesRoute ? c.accent.primary : c.text.tertiary, minWidth: 32 }}>
+                <ScheduleIcon sx={{ fontSize: 20 }} />
+              </ListItemIcon>
+              <ListItemText
+                primary="Automations"
+                sx={{
+                  '& .MuiListItemText-primary': {
+                    color: isSchedulesRoute ? c.text.primary : c.text.muted,
+                    fontSize: '0.82rem',
+                    fontWeight: isSchedulesRoute ? 600 : 400,
                   },
                 }}
               />

@@ -23,6 +23,7 @@ import Views from './pages/Views/Views';
 import Customization from './pages/Customization/Customization';
 import Analytics from './pages/Analytics/Analytics';
 import Missions from './pages/Missions/Missions';
+import Schedules from './pages/Schedules/Schedules';
 import OnboardingModal from './components/OnboardingModal';
 import { trackEvent, getLastAction, getLastPage, getTimeSpent } from '@/shared/analytics';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
@@ -253,6 +254,7 @@ const ThemedApp: React.FC = () => {
                       routes. This route exists only so React Router matches the URL. */}
                   <Route path="/dashboard/:id" element={null} />
                   <Route path="/missions" element={<Missions />} />
+                  <Route path="/schedules" element={<Schedules />} />
                   <Route path="/customization" element={<Customization />} />
                   <Route path="/skills" element={<Skills />} />
                   <Route path="/actions" element={<Tools />} />
