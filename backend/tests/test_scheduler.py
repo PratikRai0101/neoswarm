@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.apps.scheduler.models import ScheduleCreate
+from backend.apps.scheduler.models import ScheduleCreate, ScheduleUpdate
 from backend.apps.scheduler.scheduler import Scheduler
 
 
@@ -58,6 +58,34 @@ async def test_run_now_launches_an_agent_and_reschedules_interval(tmp_path):
     await asyncio.sleep(0.02)
     assert scheduler.get(schedule.id).status == "scheduled"
     assert scheduler.get(schedule.id).next_run_at is not None
+
+
+@pytest.mark.asyncio
+async def test_update_can_change_schedule_kind_without_stale_timing_fields(tmp_path):
+    scheduler = Scheduler(tmp_path / "schedules", agent_manager=FakeAgentManager())
+    interval = await scheduler.create(
+        ScheduleCreate(
+            name="Interval",
+            prompt="Run repeatedly",
+            interval_seconds=60,
+        )
+    )
+
+    once = await scheduler.update(
+        interval.id,
+        ScheduleUpdate(kind="once", run_at=scheduler.clock()),
+    )
+    assert once.kind == "once"
+    assert once.interval_seconds is None
+    assert once.run_at is not None
+
+    interval_again = await scheduler.update(
+        interval.id,
+        ScheduleUpdate(kind="interval", interval_seconds=120),
+    )
+    assert interval_again.kind == "interval"
+    assert interval_again.interval_seconds == 120
+    assert interval_again.run_at is None
 
 
 @pytest.mark.asyncio

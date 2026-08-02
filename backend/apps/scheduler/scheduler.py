@@ -133,13 +133,15 @@ class Scheduler:
         values = task.model_dump()
         updates = patch.model_dump(exclude_unset=True)
         values.update(updates)
-        # A timing field omitted from a patch keeps the existing schedule. A
-        # supplied kind must still be validated against the resulting fields.
+        # A timing field omitted from a patch keeps the existing schedule. When
+        # changing kinds, supply a valid timing field before Pydantic validates
+        # the resulting schedule (the old kind's timing field may be null).
+        resulting_kind = updates.get("kind", task.kind)
+        if resulting_kind == "interval" and "interval_seconds" not in updates:
+            values["interval_seconds"] = task.interval_seconds or 10
+        if resulting_kind == "once" and "run_at" not in updates:
+            values["run_at"] = task.run_at or self.clock()
         updated = ScheduledTask.model_validate(values)
-        if updated.kind == "interval" and "interval_seconds" not in updates:
-            updated.interval_seconds = task.interval_seconds
-        if updated.kind == "once" and "run_at" not in updates:
-            updated.run_at = task.run_at
         if updated.kind == "interval":
             updated.run_at = None
             if updated.next_run_at is None or "kind" in updates or "interval_seconds" in updates:
