@@ -19,6 +19,7 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import BuildIcon from '@mui/icons-material/Build';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -291,6 +292,7 @@ const AppShell: React.FC = () => {
   const isMemoryRoute = location.pathname === '/memory';
   const isGitRoute = location.pathname === '/git';
   const isArtifactsRoute = location.pathname === '/artifacts';
+  const isTerminalsRoute = location.pathname === '/terminals';
   const isAppsRoute = location.pathname === '/apps' || location.pathname.startsWith('/apps/');
   const isCustomizationRoute = location.pathname === '/customization' || CUSTOMIZATION_PATHS.has(location.pathname);
   const activeDashboardId = location.pathname.startsWith('/dashboard/')
@@ -893,6 +895,35 @@ const AppShell: React.FC = () => {
                     color: isArtifactsRoute ? c.text.primary : c.text.muted,
                     fontSize: '0.82rem',
                     fontWeight: isArtifactsRoute ? 600 : 400,
+                  },
+                }}
+              />
+            </ListItemButton>
+          </Box>
+
+          {/* Terminal workspace */}
+          <Box sx={{ px: 1, mb: 0.25 }}>
+            <ListItemButton
+              onClick={() => navigate('/terminals')}
+              sx={{
+                borderRadius: 1.5,
+                py: 0.6,
+                px: 1.25,
+                bgcolor: isTerminalsRoute ? `${c.accent.primary}12` : 'transparent',
+                '&:hover': { bgcolor: isTerminalsRoute ? `${c.accent.primary}18` : `${c.text.tertiary}0A` },
+                transition: 'background-color 0.15s',
+              }}
+            >
+              <ListItemIcon sx={{ color: isTerminalsRoute ? c.accent.primary : c.text.tertiary, minWidth: 32 }}>
+                <TerminalOutlinedIcon sx={{ fontSize: 20 }} />
+              </ListItemIcon>
+              <ListItemText
+                primary="Terminal"
+                sx={{
+                  '& .MuiListItemText-primary': {
+                    color: isTerminalsRoute ? c.text.primary : c.text.muted,
+                    fontSize: '0.82rem',
+                    fontWeight: isTerminalsRoute ? 600 : 400,
                   },
                 }}
               />

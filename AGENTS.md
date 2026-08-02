@@ -51,7 +51,7 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 - Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
 - Release artifacts are configured for macOS DMG builds on Intel and Apple Silicon, but signed/notarized packaging and updater smoke tests remain.
 - Optional approval-gated native desktop control is implemented through the host computer adapter; macOS Accessibility and Screen Recording permissions still need host testing.
-- Image generation, terminal tabs, SSH, and dedicated Git/PR hosting workflows remain roadmap work; local Git inspection/commits and the local artifact workspace are implemented.
+- Image generation, SSH, and dedicated Git/PR hosting workflows remain roadmap work; local Git inspection/commits, the artifact workspace, and the multi-tab terminal are implemented.
 
 ---
 
@@ -190,7 +190,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 | Automations | ✅ Scheduled tasks | ✅ Durable interval/one-time schedules, agent tools, REST API, and Automations workspace | Low |
 | Git Integration | ✅ PR review, commits | ✅ Git workspace/API/tools for status, diff, branches, and explicit commits; PR hosting remains | Medium |
 | Artifact Viewer | ✅ PDF, spreadsheets | ✅ Approval-gated publishing plus local previews/downloads for PDF, images, CSV, JSON, Markdown, and text | Low |
-| Terminal | ✅ Multiple tabs | 🔄 Future | Low |
+| Terminal | ✅ Multiple tabs | ✅ Local PTY tabs with streaming input/output, resize, interrupt, restart, and session metadata | Low |
 | SSH | ✅ Remote devboxes | 🔄 Future | Low |
 
 **Files:** `src-tauri/`, `frontend/`
@@ -223,6 +223,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 | Auth System | ✅ | API-key settings, keychain storage, redaction, and CLI/UI flows |
 | In-app Browser | 🟡 | Native Tauri child-webview rendering exists; command/control parity and packaging tests remain |
 | Artifacts | ✅ | Approval-gated local publishing, secure workspace serving, previews, downloads, and default-app opening |
+| Terminal | ✅ | Local interactive shell tabs with streaming output, resize handling, interrupt, and persisted working directories |
 | Memory | ✅ | User-controlled local memories with search, editing, deletion, tools, and prompt context |
 | Scheduled Tasks | ✅ | Durable interval/one-time automation with manual run controls |
 | Git Tools | ✅ | Git workspace plus native status, diff, and explicit commit tools; PR hosting remains |
@@ -269,7 +270,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 - [~] Native macOS application control: approval-gated PyAutoGUI adapter exists; DMG packaging and host-permission testing remain
 - [~] Dedicated Git/PR workflow: local Git workspace is complete; hosted PR review remains
 - [x] Artifact viewer/publishing workspace for PDF, images, CSV, JSON, Markdown, and text files
-- [ ] Multi-tab terminal
+- [x] Multi-tab terminal with local PTY sessions, streaming I/O, resize, interrupt, restart, and persisted tab metadata
 - [ ] SSH workspaces
 - [ ] Tauri updater and release-install smoke tests
 
@@ -314,6 +315,7 @@ neoswarm server           # Start backend server
 | **TUI** | `cli/tui.py` |
 | **Native App** | `src-tauri/`, `frontend/` (rebuild) |
 | **Artifacts** | `backend/apps/artifacts/`, `backend/apps/agents/tools/artifacts.py`, `frontend/src/app/pages/Artifacts/` |
+| **Terminal** | `backend/apps/terminals/`, `frontend/src/app/pages/Terminals/`, `frontend/src/shared/state/terminalsSlice.ts` |
 
 ---
 

@@ -242,12 +242,20 @@ class TerminalManager:
         if terminal.status == "running":
             terminal.status = "stopped"
             terminal.pid = None
+            terminal.updated_at = self._now()
+            self._save_metadata(terminal)
         return terminal
 
     def list(self) -> list[Terminal]:
         terminals = {terminal.id: terminal for terminal in self._load_all_metadata()}
         for terminal_id, runtime in self._runtimes.items():
             terminals[terminal_id] = runtime.terminal
+        for terminal in terminals.values():
+            if terminal.status == "running" and terminal.id not in self._runtimes:
+                terminal.status = "stopped"
+                terminal.pid = None
+                terminal.updated_at = self._now()
+                self._save_metadata(terminal)
         return sorted(terminals.values(), key=lambda item: item.updated_at, reverse=True)
 
     async def write(self, terminal_id: str, data: str) -> None:
