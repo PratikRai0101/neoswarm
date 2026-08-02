@@ -434,7 +434,7 @@ neoswarm server           # Start backend server
 - Provider credentials: environment variables take precedence, then the platform keychain/settings store
 - Native AgentLoop built-ins: filesystem, shell, question, web, memory, scheduling, and Git tools; configured MCP/browser delegation runs through `MCPClientManager`
 - Persistent memory lives under the configured data root in `memory/`; schedules live under `schedules/`
-- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 129 tests pass)
+- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 132 tests pass)
 
 ---
 
