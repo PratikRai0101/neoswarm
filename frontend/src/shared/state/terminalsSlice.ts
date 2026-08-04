@@ -10,6 +10,9 @@ export interface Terminal {
   title: string;
   cwd: string;
   shell: string;
+  connection: 'local' | 'ssh';
+  target: string | null;
+  ssh_profile_id: string | null;
   status: TerminalStatus;
   pid: number | null;
   exit_code: number | null;
@@ -53,7 +56,7 @@ export const fetchTerminals = createAsyncThunk('terminals/fetch', async () => {
 
 export const createTerminal = createAsyncThunk(
   'terminals/create',
-  async (request: { cwd?: string; shell?: string; title?: string }) => {
+  async (request: { cwd?: string; shell?: string; title?: string; ssh_profile_id?: string }) => {
     const response = await fetch(`${TERMINALS_API}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

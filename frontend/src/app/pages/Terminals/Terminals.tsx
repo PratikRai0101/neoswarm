@@ -207,7 +207,7 @@ const Terminals: React.FC = () => {
             <Box sx={{ px: 1.5, py: 0.8, display: 'flex', alignItems: 'center', gap: 1, bgcolor: c.bg.surface, borderBottom: `1px solid ${c.border.subtle}` }}>
               <Typography sx={{ color: c.text.primary, fontSize: '0.78rem', fontWeight: 600 }}>{active.title}</Typography>
               <Chip label={active.status} size="small" sx={{ height: 20, fontSize: '0.65rem', color: active.status === 'running' ? c.status.success : c.text.ghost }} />
-              <Typography sx={{ flex: 1, minWidth: 0, color: c.text.ghost, fontSize: '0.68rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.cwd}</Typography>
+              <Typography sx={{ flex: 1, minWidth: 0, color: c.text.ghost, fontSize: '0.68rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.connection === 'ssh' ? `SSH · ${active.target || active.title}` : active.cwd}</Typography>
               <Tooltip title="Clear output"><IconButton size="small" onClick={() => dispatch(clearTerminalOutput(active.id))}><ClearAllOutlinedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip>
               {active.status === 'running' ? (
                 <Tooltip title="Interrupt (Ctrl-C)"><IconButton size="small" onClick={() => void send({ type: 'interrupt' })}><StopCircleOutlinedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip>

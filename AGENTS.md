@@ -51,7 +51,7 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 - Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
 - Release artifacts are configured for macOS DMG builds on Intel and Apple Silicon, but signed/notarized packaging and updater smoke tests remain.
 - Optional approval-gated native desktop control is implemented through the host computer adapter; macOS Accessibility and Screen Recording permissions still need host testing.
-- Image generation and SSH remain roadmap work; local Git inspection/commits, explicit remote pushes/GitHub PR creation, the artifact workspace, and the multi-tab terminal are implemented.
+- Image generation remains roadmap work; local Git inspection/commits, explicit remote pushes/GitHub PR creation, the artifact workspace, multi-tab terminals, and saved SSH workspaces are implemented.
 
 ---
 
@@ -191,7 +191,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 | Git Integration | ✅ PR review, commits | ✅ Git workspace/API with explicit commits, remote pushes, and authenticated GitHub PR creation through `gh` | Medium |
 | Artifact Viewer | ✅ PDF, spreadsheets | ✅ Approval-gated publishing plus local previews/downloads for PDF, images, CSV, JSON, Markdown, and text | Low |
 | Terminal | ✅ Multiple tabs | ✅ Local PTY tabs with streaming input/output, resize, interrupt, restart, and session metadata | Low |
-| SSH | ✅ Remote devboxes | 🔄 Future | Low |
+| SSH | ✅ Remote devboxes | ✅ Saved local profiles and remote PTY tabs through the system SSH client/agent | Low |
 
 **Files:** `src-tauri/`, `frontend/`
 
@@ -224,6 +224,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 | In-app Browser | 🟡 | Native Tauri child-webview rendering exists; command/control parity and packaging tests remain |
 | Artifacts | ✅ | Approval-gated local publishing, secure workspace serving, previews, downloads, and default-app opening |
 | Terminal | ✅ | Local interactive shell tabs with streaming output, resize handling, interrupt, and persisted working directories |
+| SSH | ✅ | Saved non-secret connection profiles opening remote shells in Terminal tabs |
 | Memory | ✅ | User-controlled local memories with search, editing, deletion, tools, and prompt context |
 | Scheduled Tasks | ✅ | Durable interval/one-time automation with manual run controls |
 | Git Tools | ✅ | Git workspace plus native status, diff, explicit commits, remote pushes, and GitHub PR creation from the UI |
@@ -271,7 +272,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 - [x] Dedicated Git/PR workflow: explicit remote pushes and GitHub pull-request creation through authenticated `gh`
 - [x] Artifact viewer/publishing workspace for PDF, images, CSV, JSON, Markdown, and text files
 - [x] Multi-tab terminal with local PTY sessions, streaming I/O, resize, interrupt, restart, and persisted tab metadata
-- [ ] SSH workspaces
+- [x] SSH workspaces with saved profiles and remote PTY terminal tabs
 - [ ] Tauri updater and release-install smoke tests
 
 ### Phase 11: Standalone Binary (High Priority)
@@ -317,6 +318,7 @@ neoswarm server           # Start backend server
 | **Artifacts** | `backend/apps/artifacts/`, `backend/apps/agents/tools/artifacts.py`, `frontend/src/app/pages/Artifacts/` |
 | **Terminal** | `backend/apps/terminals/`, `frontend/src/app/pages/Terminals/`, `frontend/src/shared/state/terminalsSlice.ts` |
 | **Hosted Git/PR** | `backend/apps/git/`, `frontend/src/app/pages/Git/`, `frontend/src/shared/state/gitSlice.ts` |
+| **SSH** | `backend/apps/ssh/`, `frontend/src/app/pages/SSH/`, `frontend/src/shared/state/sshSlice.ts` |
 
 ---
 
