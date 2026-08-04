@@ -47,7 +47,7 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 
 ### Current implementation gaps (2026-08-02)
 
-- Tauri updater metadata and update-install flow still need to be wired and smoke-tested.
+- Tauri updater metadata and update-install flow are covered by frontend lifecycle tests; live signed-update validation on a clean Mac remains.
 - Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
 - Release artifacts are configured for macOS DMG builds on Intel and Apple Silicon, but signed/notarized packaging and updater smoke tests remain.
 - Optional approval-gated native desktop control is implemented through the host computer adapter; macOS Accessibility and Screen Recording permissions still need host testing.
