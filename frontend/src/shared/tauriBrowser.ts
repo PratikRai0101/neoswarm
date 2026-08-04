@@ -105,7 +105,9 @@ async function syncTab(
     try {
       entry = await createManaged(browserId, tab, rect);
     } catch (error) {
+      const failedEntry = managed.get(tabKey);
       managed.delete(tabKey);
+      await closeManaged(failedEntry);
       throw error;
     }
   }

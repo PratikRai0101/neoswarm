@@ -746,6 +746,7 @@ async function handleBrowserCommand(data: Record<string, any>) {
 
   const wv = getWebview(browser_id, tab_id || undefined);
   if (!wv) {
+    setActivity(browser_id, null);
     dashboardWs.send('browser:result', {
       request_id,
       error: `Browser card '${browser_id}'${tab_id ? ` tab '${tab_id}'` : ''} not found or not an Electron webview`,
