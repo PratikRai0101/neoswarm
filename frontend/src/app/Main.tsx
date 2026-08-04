@@ -29,6 +29,7 @@ import Git from './pages/Git/Git';
 import Artifacts from './pages/Artifacts/Artifacts';
 import Terminals from './pages/Terminals/Terminals';
 import SSH from './pages/SSH/SSH';
+import Images from './pages/Images/Images';
 import OnboardingModal from './components/OnboardingModal';
 import { trackEvent, getLastAction, getLastPage, getTimeSpent } from '@/shared/analytics';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
@@ -266,6 +267,7 @@ const ThemedApp: React.FC = () => {
                   <Route path="/artifacts" element={<Artifacts />} />
                   <Route path="/terminals" element={<Terminals />} />
                   <Route path="/ssh" element={<SSH />} />
+                  <Route path="/images" element={<Images />} />
                   <Route path="/customization" element={<Customization />} />
                   <Route path="/skills" element={<Skills />} />
                   <Route path="/actions" element={<Tools />} />

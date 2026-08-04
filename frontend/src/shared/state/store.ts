@@ -20,6 +20,7 @@ import gitReducer from './gitSlice';
 import artifactsReducer from './artifactsSlice';
 import terminalsReducer from './terminalsSlice';
 import sshReducer from './sshSlice';
+import imagesReducer from './imagesSlice';
 
 export const store = configureStore({
   reducer: {
@@ -44,6 +45,7 @@ export const store = configureStore({
     artifacts: artifactsReducer,
     terminals: terminalsReducer,
     ssh: sshReducer,
+    images: imagesReducer,
   },
 });
 

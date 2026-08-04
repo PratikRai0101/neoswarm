@@ -36,8 +36,8 @@ configured MCP tools.
   **macOS DMG packages for Intel and Apple Silicon**
 - Local memory workspace, durable automations, Git workspace/API with explicit
   commit, remote push, and GitHub PR controls, an approval-gated Artifact
-  workspace, multi-tab local terminal sessions, and saved SSH workspaces with
-  streaming PTY output
+  workspace, multi-tab local terminal sessions, saved SSH workspaces, and
+  OpenAI image generation with local Artifact publishing and streaming PTY output
 - Optional approval-gated native desktop control (mouse, keyboard, scrolling,
   and screenshots) via the host computer adapter
 

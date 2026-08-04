@@ -51,7 +51,7 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 - Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
 - Release artifacts are configured for macOS DMG builds on Intel and Apple Silicon, but signed/notarized packaging and updater smoke tests remain.
 - Optional approval-gated native desktop control is implemented through the host computer adapter; macOS Accessibility and Screen Recording permissions still need host testing.
-- Image generation remains roadmap work; local Git inspection/commits, explicit remote pushes/GitHub PR creation, the artifact workspace, multi-tab terminals, and saved SSH workspaces are implemented.
+- Browser control parity, release hardening, and direct model-provider OAuth remain; local Git/PR workflows, artifact viewing, multi-tab terminals, saved SSH workspaces, and OpenAI image generation are implemented.
 
 ---
 
@@ -183,7 +183,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 |---------|--------------|----------|----------|
 | Computer Use | ✅ macOS app control | 🟡 Approval-gated optional mouse/keyboard/screenshot adapter; host permissions and target testing remain | High |
 | In-app Browser | ✅ Local servers + web | 🟡 Basic iframe fallback; native Tauri webview/control remains | High |
-| Image Generation | ✅ gpt-image-1.5 | 🔄 Future tool | Low |
+| Image Generation | ✅ gpt-image-1.5 | ✅ OpenAI image generation with local Artifact publishing and approval-gated agent access | Low |
 | Memory | ✅ Persistent | ✅ Local memory store, relevance context, tools, API, and Memory workspace | Medium |
 | 90+ Plugins | ✅ MCP servers | ✅ Registry/configuration, discovery, schemas, permissions, and native runtime execution | High |
 | Multi-agent | ✅ Parallel | ✅ Mission workspace with sequential/parallel workers; in-chat delegation follows MCP work | Done |
@@ -228,7 +228,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 | Memory | ✅ | User-controlled local memories with search, editing, deletion, tools, and prompt context |
 | Scheduled Tasks | ✅ | Durable interval/one-time automation with manual run controls |
 | Git Tools | ✅ | Git workspace plus native status, diff, explicit commits, remote pushes, and GitHub PR creation from the UI |
-| Image Gen | 🔄 | Future |
+| Image Gen | ✅ | OpenAI image generation workspace and approval-gated GenerateImage tool |
 
 ---
 
@@ -267,7 +267,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 - [x] Memory system beyond session persistence
 - [x] Scheduled/automated tasks
 - [x] MCP runtime execution for configured integrations
-- [ ] Image generation tool
+- [x] Image generation workspace and approval-gated `GenerateImage` tool with local Artifact publishing
 - [~] Native macOS application control: approval-gated PyAutoGUI adapter exists; DMG packaging and host-permission testing remain
 - [x] Dedicated Git/PR workflow: explicit remote pushes and GitHub pull-request creation through authenticated `gh`
 - [x] Artifact viewer/publishing workspace for PDF, images, CSV, JSON, Markdown, and text files
@@ -319,6 +319,7 @@ neoswarm server           # Start backend server
 | **Terminal** | `backend/apps/terminals/`, `frontend/src/app/pages/Terminals/`, `frontend/src/shared/state/terminalsSlice.ts` |
 | **Hosted Git/PR** | `backend/apps/git/`, `frontend/src/app/pages/Git/`, `frontend/src/shared/state/gitSlice.ts` |
 | **SSH** | `backend/apps/ssh/`, `frontend/src/app/pages/SSH/`, `frontend/src/shared/state/sshSlice.ts` |
+| **Images** | `backend/apps/images/`, `backend/apps/agents/tools/images.py`, `frontend/src/app/pages/Images/` |
 
 ---
 
