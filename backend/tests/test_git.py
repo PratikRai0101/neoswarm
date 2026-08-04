@@ -4,11 +4,13 @@ import json
 import subprocess
 
 import pytest
+from fastapi.testclient import TestClient
 
 from backend.apps.agents.tools.base import ToolContext
 from backend.apps.agents.tools.git import GitCommitTool, GitStatusTool
 from backend.apps.git.git import GitService
-from backend.apps.git.models import GitCommitRequest
+from backend.apps.git.models import GitCommitRequest, GitPullRequestCreate, GitPushRequest
+from backend.main import app
 
 
 def init_repo(tmp_path):
@@ -56,6 +58,83 @@ async def test_git_service_parses_tracking_branch_counts(tmp_path):
     assert status.upstream
     assert status.ahead == 0
     assert status.behind == 0
+
+
+@pytest.mark.asyncio
+async def test_git_service_lists_remotes_and_pushes_explicitly(tmp_path):
+    init_repo(tmp_path)
+    remote = tmp_path.parent / "git-host.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", str(remote)], check=True)
+
+    service = GitService()
+    remotes = await service.remotes(str(tmp_path))
+    assert remotes[0].name == "origin"
+    assert remotes[0].url == str(remote)
+
+    pushed = await service.push(GitPushRequest(path=str(tmp_path), remote="origin"))
+    assert pushed.remote == "origin"
+    assert pushed.branch
+    assert "refs/heads" in subprocess.check_output(
+        ["git", "--git-dir", str(remote), "show-ref"], text=True
+    )
+
+
+def test_git_http_api_exposes_remotes_and_explicit_push(tmp_path):
+    init_repo(tmp_path)
+    remote = tmp_path.parent / "git-http-remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", str(remote)], check=True)
+
+    client = TestClient(app)
+    remotes = client.get("/api/git/remotes", params={"path": str(tmp_path)})
+    assert remotes.status_code == 200
+    assert remotes.json()["remotes"][0]["name"] == "origin"
+
+    pushed = client.post(
+        "/api/git/push",
+        json={"path": str(tmp_path), "remote": "origin", "set_upstream": True},
+    )
+    assert pushed.status_code == 200
+    assert pushed.json()["push"]["branch"]
+
+
+@pytest.mark.asyncio
+async def test_git_service_creates_pull_request_through_explicit_gh_command(tmp_path, monkeypatch):
+    init_repo(tmp_path)
+    remote = tmp_path.parent / "git-host.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", str(remote)], check=True)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    captured = tmp_path / "gh-args.txt"
+    gh = fake_bin / "gh"
+    gh.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$@\" > '{captured}'\n"
+        "printf 'https://github.com/neoswarm/test/pull/7\\n'\n"
+    )
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}:{__import__('os').environ['PATH']}")
+
+    result = await GitService().create_pull_request(
+        GitPullRequestCreate(
+            path=str(tmp_path),
+            title="Add hosted workflow",
+            body="Please review.",
+            base="main",
+            head="feature/hosted-git",
+            draft=True,
+        )
+    )
+
+    assert result.url == "https://github.com/neoswarm/test/pull/7"
+    args = captured.read_text().splitlines()
+    assert "pr" in args and "create" in args
+    assert args[args.index("--title") + 1] == "Add hosted workflow"
+    assert args[args.index("--body") + 1] == "Please review."
+    assert "--draft" in args
 
 
 @pytest.mark.asyncio
