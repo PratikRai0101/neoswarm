@@ -18,6 +18,7 @@ from typing import Any
 import pty
 from fastapi import HTTPException, WebSocket
 
+from backend.apps.ssh.ssh import ssh_service
 from backend.apps.terminals.models import Terminal, TerminalCreate, TerminalResize
 from backend.config.Apps import SubApp
 from backend.config.paths import TERMINALS_DIR
@@ -112,11 +113,22 @@ class TerminalManager:
 
     async def create(self, request: TerminalCreate) -> Terminal:
         cwd = self.resolve_cwd(request.cwd)
-        shell = self.resolve_shell(request.shell)
+        profile = None
+        if request.ssh_profile_id:
+            try:
+                profile = ssh_service.get(request.ssh_profile_id)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+            if request.shell:
+                raise ValueError("SSH terminals use the selected profile's ssh client")
+        shell = "ssh" if profile else self.resolve_shell(request.shell)
         terminal = Terminal(
-            title=self._title(cwd, request.title),
+            title=self._title(cwd, request.title or (profile.name if profile else None)),
             cwd=cwd,
             shell=shell,
+            connection="ssh" if profile else "local",
+            target=profile.target if profile else None,
+            ssh_profile_id=profile.id if profile else None,
             status="stopped",
         )
         self._save_metadata(terminal)
@@ -144,10 +156,23 @@ class TerminalManager:
         self._set_size(master_fd, cols=120, rows=36)
         environment = os.environ.copy()
         environment.setdefault("TERM", "xterm-256color")
+        if terminal.connection == "ssh":
+            if not terminal.ssh_profile_id:
+                os.close(master_fd)
+                os.close(slave_fd)
+                raise ValueError("SSH terminal is missing its profile")
+            try:
+                command = ssh_service.command(ssh_service.get(terminal.ssh_profile_id))
+            except ValueError as exc:
+                os.close(master_fd)
+                os.close(slave_fd)
+                raise ValueError(str(exc)) from exc
+        else:
+            command = [terminal.shell, "-il"]
+
         try:
             process = await asyncio.create_subprocess_exec(
-                terminal.shell,
-                "-il",
+                *command,
                 stdin=slave_fd,
                 stdout=slave_fd,
                 stderr=slave_fd,

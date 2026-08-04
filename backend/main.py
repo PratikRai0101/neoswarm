@@ -54,6 +54,7 @@ from backend.apps.skill_registry.skill_registry import skill_registry
 from backend.apps.outputs.outputs import outputs
 from backend.apps.artifacts.artifacts import artifacts
 from backend.apps.terminals.terminals import terminals, terminal_manager
+from backend.apps.ssh.ssh import ssh
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.analytics.analytics import analytics
 from fastapi.middleware.cors import CORSMiddleware
@@ -76,6 +77,7 @@ main_app = MainApp(
         outputs,
         artifacts,
         terminals,
+        ssh,
         dashboards,
         analytics,
     ]

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 TerminalStatus = Literal["running", "stopped", "exited"]
+TerminalConnection = Literal["local", "ssh"]
 
 
 class Terminal(BaseModel):
@@ -13,6 +14,9 @@ class Terminal(BaseModel):
     title: str
     cwd: str
     shell: str
+    connection: TerminalConnection = "local"
+    target: Optional[str] = None
+    ssh_profile_id: Optional[str] = None
     status: TerminalStatus = "stopped"
     pid: Optional[int] = None
     exit_code: Optional[int] = None
@@ -24,6 +28,7 @@ class TerminalCreate(BaseModel):
     cwd: Optional[str] = None
     shell: Optional[str] = None
     title: Optional[str] = Field(default=None, max_length=100)
+    ssh_profile_id: Optional[str] = None
 
 
 class TerminalResize(BaseModel):
