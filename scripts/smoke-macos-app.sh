@@ -3,12 +3,13 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DMG_PATH="$(find "$PROJECT_ROOT/src-tauri/target/debug/bundle/dmg" -maxdepth 1 -type f -name 'NeoSwarm_*.dmg' -print -quit)"
+BUILD_PROFILE="${BUILD_PROFILE:-debug}"
+DMG_PATH="${DMG_PATH:-$(find "$PROJECT_ROOT/src-tauri/target/$BUILD_PROFILE/bundle/dmg" -maxdepth 1 -type f -name 'NeoSwarm_*.dmg' -print -quit)}"
 MOUNT_DIR="${RUNNER_TEMP:-/tmp}/neoswarm-dmg-mount"
 LOG_PATH="${RUNNER_TEMP:-/tmp}/neoswarm-macos-app.log"
 
 if [[ -z "$DMG_PATH" ]]; then
-  echo "No debug macOS DMG was found under src-tauri/target/debug/bundle/dmg" >&2
+  echo "No macOS DMG was found for '$BUILD_PROFILE' under src-tauri/target/$BUILD_PROFILE/bundle/dmg" >&2
   exit 1
 fi
 if lsof -nP -iTCP:8324 -sTCP:LISTEN >/dev/null 2>&1; then
