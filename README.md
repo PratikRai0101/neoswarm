@@ -136,6 +136,9 @@ PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q
 # Web type-check and production build
 (cd frontend && npm run typecheck && npm run build)
 
+# Browser lifecycle/control tests
+(cd frontend && npm test)
+
 # Tauri type/build check
 cargo check --manifest-path src-tauri/Cargo.toml --locked
 ```
