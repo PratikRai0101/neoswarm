@@ -84,6 +84,7 @@ FULL_TOOLS = [
     "GitCommit",
     "ComputerUse",
     "PublishArtifact",
+    "GenerateImage",
     "WebSearch",
     "WebFetch",
     "NotebookEdit",

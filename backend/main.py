@@ -55,6 +55,7 @@ from backend.apps.outputs.outputs import outputs
 from backend.apps.artifacts.artifacts import artifacts
 from backend.apps.terminals.terminals import terminals, terminal_manager
 from backend.apps.ssh.ssh import ssh
+from backend.apps.images.images import images
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.analytics.analytics import analytics
 from fastapi.middleware.cors import CORSMiddleware
@@ -78,6 +79,7 @@ main_app = MainApp(
         artifacts,
         terminals,
         ssh,
+        images,
         dashboards,
         analytics,
     ]

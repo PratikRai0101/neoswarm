@@ -84,6 +84,28 @@ def _safe_filename(value: str, fallback: str) -> str:
     return filename[:255]
 
 
+def _store_artifact(artifact: Artifact, *, content: bytes | None = None, source: Path | None = None) -> Artifact:
+    root = Path(ARTIFACTS_DIR)
+    root.mkdir(parents=True, exist_ok=True)
+    content_path = root / _content_filename(artifact)
+    metadata_path = root / f"{artifact.id}.json"
+    try:
+        if content is not None:
+            content_path.write_bytes(content)
+        elif source is not None:
+            shutil.copyfile(source, content_path)
+        else:
+            raise ValueError("Artifact content is required")
+        metadata_path.write_text(
+            json.dumps(artifact.model_dump(), indent=2), encoding="utf-8"
+        )
+    except Exception:
+        content_path.unlink(missing_ok=True)
+        metadata_path.unlink(missing_ok=True)
+        raise
+    return artifact
+
+
 def publish_file(
     source_path: str | os.PathLike[str],
     *,
@@ -113,21 +135,30 @@ def publish_file(
         media_type=media_type,
         size_bytes=size_bytes,
     )
+    return _store_artifact(artifact, source=source)
 
-    root = Path(ARTIFACTS_DIR)
-    root.mkdir(parents=True, exist_ok=True)
-    content_path = root / _content_filename(artifact)
-    metadata_path = root / f"{artifact.id}.json"
-    try:
-        shutil.copyfile(source, content_path)
-        metadata_path.write_text(
-            json.dumps(artifact.model_dump(), indent=2), encoding="utf-8"
+
+def publish_bytes(
+    content: bytes,
+    *,
+    name: str,
+    media_type: str,
+    description: str = "",
+) -> Artifact:
+    """Store generated or downloaded bytes in the local artifact workspace."""
+    if len(content) > MAX_ARTIFACT_BYTES:
+        raise ValueError(
+            f"Artifact is too large ({len(content)} bytes); maximum is {MAX_ARTIFACT_BYTES} bytes"
         )
-    except Exception:
-        content_path.unlink(missing_ok=True)
-        metadata_path.unlink(missing_ok=True)
-        raise
-    return artifact
+    filename = _safe_filename(name, "artifact.bin")
+    artifact = Artifact(
+        name=filename,
+        description=description.strip(),
+        filename=filename,
+        media_type=media_type,
+        size_bytes=len(content),
+    )
+    return _store_artifact(artifact, content=content)
 
 
 def _all() -> list[Artifact]:

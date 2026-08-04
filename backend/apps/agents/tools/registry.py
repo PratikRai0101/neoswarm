@@ -55,6 +55,7 @@ def init_tools() -> None:
     from backend.apps.agents.tools.git import GitStatusTool, GitDiffTool, GitCommitTool
     from backend.apps.agents.tools.computer import ComputerUseTool
     from backend.apps.agents.tools.artifacts import PublishArtifactTool
+    from backend.apps.agents.tools.images import GenerateImageTool
 
     for tool_cls in [
         ReadTool,
@@ -77,6 +78,7 @@ def init_tools() -> None:
         GitCommitTool,
         ComputerUseTool,
         PublishArtifactTool,
+        GenerateImageTool,
     ]:
         register_tool(tool_cls())
 

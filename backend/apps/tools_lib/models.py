@@ -28,6 +28,7 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="GitCommit", description="Create an explicitly requested Git commit", category="git"),
     BuiltinTool(name="ComputerUse", description="Control the local desktop with explicit approval", category="computer_use"),
     BuiltinTool(name="PublishArtifact", description="Publish a local file to the Artifact workspace", category="artifacts"),
+    BuiltinTool(name="GenerateImage", description="Generate an image and save it to the Artifact workspace", category="images"),
     # Deferred tools (loaded via ToolSearch on demand)
     BuiltinTool(name="WebSearch", description="Search the web for real-time information", category="search", deferred=True),
     BuiltinTool(name="WebFetch", description="Fetch and read content from a URL", category="search", deferred=True),
