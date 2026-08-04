@@ -5,21 +5,30 @@ import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
+import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import InputLabel from '@mui/material/InputLabel';
+import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CommitOutlinedIcon from '@mui/icons-material/CommitOutlined';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
+import PublishOutlinedIcon from '@mui/icons-material/PublishOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import {
   clearGitError,
   createGitCommit,
+  createGitPullRequest,
   fetchGitBranches,
   fetchGitDiff,
+  fetchGitRemotes,
   fetchGitStatus,
+  pushGitBranch,
 } from '@/shared/state/gitSlice';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
@@ -29,6 +38,11 @@ const Git: React.FC = () => {
   const status = useAppSelector((state) => state.git.status);
   const diff = useAppSelector((state) => state.git.diff);
   const branches = useAppSelector((state) => state.git.branches);
+  const remotes = useAppSelector((state) => state.git.remotes);
+  const pushing = useAppSelector((state) => state.git.pushing);
+  const creatingPullRequest = useAppSelector((state) => state.git.creatingPullRequest);
+  const lastPush = useAppSelector((state) => state.git.lastPush);
+  const lastPullRequest = useAppSelector((state) => state.git.lastPullRequest);
   const loading = useAppSelector((state) => state.git.loading);
   const committing = useAppSelector((state) => state.git.committing);
   const error = useAppSelector((state) => state.git.error);
@@ -36,16 +50,28 @@ const Git: React.FC = () => {
   const [path, setPath] = useState(defaultFolder || '.');
   const [message, setMessage] = useState('');
   const [stageAll, setStageAll] = useState(false);
+  const [remote, setRemote] = useState('origin');
+  const [pullRequestTitle, setPullRequestTitle] = useState('');
+  const [pullRequestBody, setPullRequestBody] = useState('');
+  const [pullRequestBase, setPullRequestBase] = useState('main');
+  const [pullRequestDraft, setPullRequestDraft] = useState(false);
 
   const refresh = useCallback(() => {
     dispatch(fetchGitStatus(path));
     dispatch(fetchGitBranches(path));
+    dispatch(fetchGitRemotes(path));
     dispatch(fetchGitDiff({ path }));
   }, [dispatch, path]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (remotes.length > 0 && !remotes.some((item) => item.name === remote)) {
+      setRemote(remotes[0].name);
+    }
+  }, [remotes, remote]);
 
   const handleCommit = async () => {
     if (!message.trim()) return;
@@ -55,6 +81,25 @@ const Git: React.FC = () => {
       setStageAll(false);
       refresh();
     }
+  };
+
+  const handlePush = async () => {
+    if (!status?.branch || !remote) return;
+    const result = await dispatch(pushGitBranch({ path, remote, branch: status.branch, setUpstream: true }));
+    if (pushGitBranch.fulfilled.match(result)) refresh();
+  };
+
+  const handleCreatePullRequest = async () => {
+    if (!status?.branch || !remote || !pullRequestTitle.trim()) return;
+    await dispatch(createGitPullRequest({
+      path,
+      title: pullRequestTitle.trim(),
+      body: pullRequestBody,
+      base: pullRequestBase.trim() || 'main',
+      head: status.branch,
+      remote,
+      draft: pullRequestDraft,
+    }));
   };
 
   return (
@@ -117,6 +162,35 @@ const Git: React.FC = () => {
                   <TextField label="Commit message" value={message} onChange={(event) => setMessage(event.target.value)} multiline minRows={2} fullWidth size="small" sx={{ mb: 1 }} />
                   <FormControlLabel control={<Checkbox checked={stageAll} onChange={(event) => setStageAll(event.target.checked)} size="small" />} label={<Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary }}>Stage all changes</Typography>} />
                   <Button variant="contained" startIcon={committing ? <CircularProgress size={16} color="inherit" /> : <CommitOutlinedIcon />} disabled={committing || !message.trim() || status.clean} onClick={handleCommit} fullWidth>Commit</Button>
+                </Box>
+
+                <Box sx={{ p: 2, border: `1px solid ${c.border.subtle}`, borderRadius: 3, bgcolor: c.bg.surface }}>
+                  <Typography sx={{ color: c.text.primary, fontWeight: 650, mb: 1 }}>Publish branch</Typography>
+                  {remotes.length === 0 ? (
+                    <Typography sx={{ color: c.text.tertiary, fontSize: '0.78rem' }}>No Git remotes configured.</Typography>
+                  ) : (
+                    <>
+                      <FormControl size="small" fullWidth sx={{ mb: 1 }}>
+                        <InputLabel>Remote</InputLabel>
+                        <Select value={remote} label="Remote" onChange={(event) => setRemote(event.target.value)}>
+                          {remotes.map((item) => <MenuItem key={item.name} value={item.name}>{item.name} · {item.url}</MenuItem>)}
+                        </Select>
+                      </FormControl>
+                      <Button variant="outlined" startIcon={pushing ? <CircularProgress size={16} /> : <PublishOutlinedIcon />} disabled={pushing || !status.branch} onClick={() => void handlePush()} fullWidth>Push {status.branch || 'branch'}</Button>
+                      {lastPush && lastPush.path === status.path && <Typography sx={{ color: c.status.success, fontSize: '0.7rem', mt: 0.75 }}>Pushed {lastPush.branch} to {lastPush.remote}.</Typography>}
+                    </>
+                  )}
+                </Box>
+
+                <Box sx={{ p: 2, border: `1px solid ${c.border.subtle}`, borderRadius: 3, bgcolor: c.bg.surface }}>
+                  <Typography sx={{ color: c.text.primary, fontWeight: 650, mb: 1 }}>Create pull request</Typography>
+                  <Typography sx={{ color: c.text.ghost, fontSize: '0.7rem', mb: 1 }}>Push the branch first, then open GitHub CLI's authenticated PR flow.</Typography>
+                  <TextField label="Title" value={pullRequestTitle} onChange={(event) => setPullRequestTitle(event.target.value)} size="small" fullWidth sx={{ mb: 1 }} />
+                  <TextField label="Description" value={pullRequestBody} onChange={(event) => setPullRequestBody(event.target.value)} multiline minRows={2} size="small" fullWidth sx={{ mb: 1 }} />
+                  <TextField label="Base branch" value={pullRequestBase} onChange={(event) => setPullRequestBase(event.target.value)} size="small" fullWidth sx={{ mb: 0.5 }} />
+                  <FormControlLabel control={<Checkbox checked={pullRequestDraft} onChange={(event) => setPullRequestDraft(event.target.checked)} size="small" />} label={<Typography sx={{ fontSize: '0.75rem', color: c.text.tertiary }}>Create as draft</Typography>} />
+                  <Button variant="contained" startIcon={creatingPullRequest ? <CircularProgress size={16} color="inherit" /> : <OpenInNewOutlinedIcon />} disabled={creatingPullRequest || !pullRequestTitle.trim() || !status.branch || remotes.length === 0} onClick={() => void handleCreatePullRequest()} fullWidth>Create pull request</Button>
+                  {lastPullRequest && lastPullRequest.path === status.path && <Button component="a" href={lastPullRequest.url} target="_blank" rel="noopener noreferrer" size="small" startIcon={<OpenInNewOutlinedIcon />} sx={{ mt: 0.75 }}>Open {lastPullRequest.url}</Button>}
                 </Box>
 
                 <Box sx={{ p: 2, border: `1px solid ${c.border.subtle}`, borderRadius: 3, bgcolor: c.bg.surface }}>

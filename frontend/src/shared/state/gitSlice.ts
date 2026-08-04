@@ -34,12 +34,39 @@ export interface GitBranch {
   upstream: string | null;
 }
 
+export interface GitRemote {
+  name: string;
+  url: string;
+}
+
+export interface GitPushResult {
+  path: string;
+  remote: string;
+  branch: string;
+  set_upstream: boolean;
+  output: string;
+}
+
+export interface GitPullRequest {
+  path: string;
+  url: string;
+  title: string;
+  base: string;
+  head: string;
+  draft: boolean;
+}
+
 interface GitState {
   status: GitStatus | null;
   diff: GitDiff | null;
   branches: GitBranch[];
+  remotes: GitRemote[];
+  lastPush: GitPushResult | null;
+  lastPullRequest: GitPullRequest | null;
   loading: boolean;
   committing: boolean;
+  pushing: boolean;
+  creatingPullRequest: boolean;
   error: string | null;
 }
 
@@ -47,8 +74,13 @@ const initialState: GitState = {
   status: null,
   diff: null,
   branches: [],
+  remotes: [],
+  lastPush: null,
+  lastPullRequest: null,
   loading: false,
   committing: false,
+  pushing: false,
+  creatingPullRequest: false,
   error: null,
 };
 
@@ -71,6 +103,31 @@ export const fetchGitDiff = createAsyncThunk('git/diff', async ({ path, staged =
 export const fetchGitBranches = createAsyncThunk('git/branches', async (path: string) => {
   const data = await parseResponse(await fetch(`${GIT_API}/branches?path=${encodeURIComponent(path)}`));
   return data.branches as GitBranch[];
+});
+
+export const fetchGitRemotes = createAsyncThunk('git/remotes', async (path: string) => {
+  const data = await parseResponse(await fetch(`${GIT_API}/remotes?path=${encodeURIComponent(path)}`));
+  return data.remotes as GitRemote[];
+});
+
+export const pushGitBranch = createAsyncThunk('git/push', async ({ path, remote, branch, setUpstream = true }: { path: string; remote: string; branch?: string; setUpstream?: boolean }) => {
+  const response = await fetch(`${GIT_API}/push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, remote, branch, set_upstream: setUpstream }),
+  });
+  const data = await parseResponse(response);
+  return data.push as GitPushResult;
+});
+
+export const createGitPullRequest = createAsyncThunk('git/pullRequest', async ({ path, title, body, base, head, remote, draft }: { path: string; title: string; body: string; base: string; head?: string; remote: string; draft: boolean }) => {
+  const response = await fetch(`${GIT_API}/pull-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, title, body, base, head, remote, draft }),
+  });
+  const data = await parseResponse(response);
+  return data.pull_request as GitPullRequest;
 });
 
 export const createGitCommit = createAsyncThunk('git/commit', async ({ path, message, stageAll }: { path: string; message: string; stageAll: boolean }) => {
@@ -101,6 +158,14 @@ const gitSlice = createSlice({
       .addCase(fetchGitDiff.rejected, (state, action) => { state.loading = false; state.error = action.error.message || 'Failed to load Git diff'; })
       .addCase(fetchGitBranches.fulfilled, (state, action) => { state.branches = action.payload; })
       .addCase(fetchGitBranches.rejected, (state, action) => { state.error = action.error.message || 'Failed to load Git branches'; })
+      .addCase(fetchGitRemotes.fulfilled, (state, action) => { state.remotes = action.payload; })
+      .addCase(fetchGitRemotes.rejected, (state, action) => { state.error = action.error.message || 'Failed to load Git remotes'; })
+      .addCase(pushGitBranch.pending, (state) => { state.pushing = true; state.error = null; })
+      .addCase(pushGitBranch.fulfilled, (state, action) => { state.pushing = false; state.lastPush = action.payload; })
+      .addCase(pushGitBranch.rejected, (state, action) => { state.pushing = false; state.error = action.error.message || 'Failed to push Git branch'; })
+      .addCase(createGitPullRequest.pending, (state) => { state.creatingPullRequest = true; state.error = null; })
+      .addCase(createGitPullRequest.fulfilled, (state, action) => { state.creatingPullRequest = false; state.lastPullRequest = action.payload; })
+      .addCase(createGitPullRequest.rejected, (state, action) => { state.creatingPullRequest = false; state.error = action.error.message || 'Failed to create pull request'; })
       .addCase(createGitCommit.pending, (state) => { state.committing = true; state.error = null; })
       .addCase(createGitCommit.fulfilled, (state) => { state.committing = false; state.diff = null; })
       .addCase(createGitCommit.rejected, (state, action) => { state.committing = false; state.error = action.error.message || 'Failed to create Git commit'; });
