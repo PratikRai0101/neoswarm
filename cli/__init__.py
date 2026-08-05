@@ -32,6 +32,29 @@ def get_backend_url() -> str:
     return os.environ.get("NEOSWARM_URL", "http://localhost:8324")
 
 
+def _auth_provider_rows(settings: dict[str, Any]) -> list[tuple[str, bool]]:
+    """Return displayable provider status without requiring raw credentials."""
+    def configured(*fields: str) -> bool:
+        return any(bool(settings.get(field)) for field in fields)
+
+    rows = [
+        ("Anthropic", configured("anthropic_api_key", "claude_subscription_token")),
+        ("OpenAI", configured("openai_api_key", "openai_subscription_token")),
+        ("Google", configured("google_api_key", "gemini_subscription_token")),
+        ("OpenRouter", configured("openrouter_api_key")),
+        ("Ollama", True),
+        ("Copilot", configured("copilot_github_token", "copilot_token")),
+    ]
+    for provider in settings.get("custom_providers", []) or []:
+        if not isinstance(provider, dict):
+            continue
+        name = str(provider.get("name", "")).strip()
+        base_url = str(provider.get("base_url", "")).strip()
+        if name and base_url:
+            rows.append((f"Custom: {name}", True))
+    return rows
+
+
 async def check_backend() -> bool:
     """Check if backend is running."""
     return await BackendClient(get_backend_url()).health()
@@ -459,10 +482,10 @@ def logout(provider: Optional[str]):
         return
 
     provider_key_map = {
-        "anthropic": "anthropic_api_key",
-        "openai": "openai_api_key",
-        "google": "google_api_key",
-        "openrouter": "openrouter_api_key",
+        "anthropic": ("anthropic_api_key", "claude_subscription_token"),
+        "openai": ("openai_api_key", "openai_subscription_token"),
+        "google": ("google_api_key", "gemini_subscription_token"),
+        "openrouter": ("openrouter_api_key",),
     }
 
     if provider == "copilot":
@@ -470,7 +493,11 @@ def logout(provider: Optional[str]):
             async with httpx.AsyncClient() as client:
                 resp = await client.put(
                     f"{get_backend_url()}/api/settings",
-                    json={"copilot_github_token": None}
+                    json={
+                        "copilot_github_token": None,
+                        "copilot_token": None,
+                        "copilot_token_expires": None,
+                    },
                 )
                 if resp.status_code == 200:
                     console.print("[green]✓ Copilot disconnected[/green]")
@@ -479,10 +506,13 @@ def logout(provider: Optional[str]):
         asyncio.run(run())
         return
 
-    key = provider_key_map.get(provider, "")
+    fields = provider_key_map.get(provider, ())
 
-    if not key:
-        console.print(f"[red]Unknown provider: {provider}[/red]")
+    if not fields:
+        if provider == "ollama":
+            console.print("[dim]Ollama is local and does not store credentials.[/dim]")
+        else:
+            console.print(f"[red]Unknown provider: {provider}[/red]")
         return
 
     async def run():
@@ -491,7 +521,7 @@ def logout(provider: Optional[str]):
             return
 
         async with httpx.AsyncClient() as client:
-            settings = {key: None}
+            settings = {field: None for field in fields}
             resp = await client.put(f"{get_backend_url()}/api/settings", json=settings)
             if resp.status_code == 200:
                 console.print(f"[green]✓ {provider.title()} credentials removed[/green]")
@@ -519,14 +549,7 @@ def status():
                 table.add_column("Status", style="green")
                 table.add_column("Default", style="yellow")
 
-                providers = [
-                    ("Anthropic", bool(settings.get("anthropic_api_key"))),
-                    ("OpenAI", bool(settings.get("openai_api_key"))),
-                    ("Google", bool(settings.get("google_api_key"))),
-                    ("OpenRouter", bool(settings.get("openrouter_api_key"))),
-                    ("Ollama", True),
-                    ("Copilot", bool(settings.get("copilot_github_token"))),
-                ]
+                providers = _auth_provider_rows(settings)
                 default_model = settings.get("default_model", "sonnet")
 
                 for name, has_key in providers:

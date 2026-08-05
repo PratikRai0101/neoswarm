@@ -258,7 +258,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 - [x] Settings panel
 - [x] In-app browser visual surface through Tauri child webviews
 - [~] Browser command/control parity and cross-platform lifecycle testing
-- [~] Tauri frontend bridge: backend sidecar and browser bridge exist; updater and native capture remain
+- [~] Tauri frontend bridge: backend sidecar, browser bridge, updater lifecycle, and release smoke coverage exist; signed updater and native capture remain
 - [x] MCP runtime: connect configured servers and execute their tools from the native loop
 - [x] Persistent memory workspace and relevant prompt context
 - [x] Durable automations workspace and scheduler lifecycle
@@ -273,7 +273,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 - [x] Artifact viewer/publishing workspace for PDF, images, CSV, JSON, Markdown, and text files
 - [x] Multi-tab terminal with local PTY sessions, streaming I/O, resize, interrupt, restart, and persisted tab metadata
 - [x] SSH workspaces with saved profiles and remote PTY terminal tabs
-- [ ] Tauri updater and release-install smoke tests
+- [~] Tauri updater lifecycle tests and unsigned local release smoke pass; signed clean-Mac install/update validation remains
 
 ### Phase 11: Standalone Binary (High Priority)
 - [x] Fix backend not spawning for standalone binary (use bundled executable or venv Python)
