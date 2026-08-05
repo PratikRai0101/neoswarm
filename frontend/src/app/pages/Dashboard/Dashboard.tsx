@@ -1,7 +1,10 @@
 import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import ChatOutlinedIcon from '@mui/icons-material/ChatOutlined';
 import DashboardHeader from './DashboardHeader';
 import { trackEvent } from '@/shared/analytics';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -93,6 +96,8 @@ interface DashboardProps {
 const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true }) => {
   const c = useClaudeTokens();
   const dispatch = useAppDispatch();
+  const location = useLocation();
+  const navigate = useNavigate();
   const elementSelectionCtx = useElementSelection();
   const isElementSelectMode = elementSelectionCtx?.selectMode ?? false;
   const dashboardName = useAppSelector((state) =>
@@ -143,6 +148,12 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
 
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const [searchPaletteOpen, setSearchPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isActive || new URLSearchParams(location.search).get('newChat') !== '1') return;
+    setToolbarOpen(true);
+    navigate(`/dashboard/${dashboardId}`, { replace: true });
+  }, [dashboardId, isActive, location.search, navigate]);
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoFocusSessionId, setAutoFocusSessionId] = useState<string | null>(null);
@@ -1655,15 +1666,26 @@ const DashboardInner: React.FC<DashboardProps> = ({ dashboardId, isActive = true
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              pointerEvents: 'none',
+              pointerEvents: 'auto',
             }}
           >
             <Typography sx={{ color: c.text.tertiary, fontSize: '1.1rem', mb: 1 }}>
               No agents running
             </Typography>
-            <Typography sx={{ color: c.text.ghost, fontSize: '0.9rem' }}>
-              Click &quot;New Agent&quot; to launch your first Claude Code instance
+            <Typography sx={{ color: c.text.ghost, fontSize: '0.9rem', mb: 2 }}>
+              Start a conversation with your configured model
             </Typography>
+            <Button
+              variant="contained"
+              startIcon={<ChatOutlinedIcon />}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleNewAgent();
+              }}
+              sx={{ bgcolor: c.accent.primary, '&:hover': { bgcolor: c.accent.hover } }}
+            >
+              Start a chat
+            </Button>
           </Box>
         ) : (
           <div

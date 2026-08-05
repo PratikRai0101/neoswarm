@@ -11,6 +11,7 @@ import MenuItem from '@mui/material/MenuItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import AddIcon from '@mui/icons-material/Add';
+import ChatOutlinedIcon from '@mui/icons-material/ChatOutlined';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -73,6 +74,13 @@ const DashboardSelection: React.FC = () => {
     }
   };
 
+  const handleStartChat = async () => {
+    const result = await dispatch(createDashboard('Untitled Dashboard'));
+    if (createDashboard.fulfilled.match(result)) {
+      navigate(`/dashboard/${result.payload.id}?newChat=1`);
+    }
+  };
+
   const handleOpenMenu = (e: React.MouseEvent<HTMLElement>, d: Dashboard) => {
     e.stopPropagation();
     setMenuAnchor(e.currentTarget);
@@ -132,21 +140,38 @@ const DashboardSelection: React.FC = () => {
               Monitor and manage your agents from a single workspace.
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-            sx={{
-              bgcolor: c.accent.primary,
-              borderRadius: 2,
-              textTransform: 'none',
-              fontWeight: 500,
-              px: 2.5,
-              '&:hover': { bgcolor: c.accent.hover },
-            }}
-          >
-            New dashboard
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="contained"
+              startIcon={<ChatOutlinedIcon />}
+              onClick={handleStartChat}
+              sx={{
+                bgcolor: c.accent.primary,
+                borderRadius: 2,
+                textTransform: 'none',
+                fontWeight: 500,
+                px: 2.5,
+                '&:hover': { bgcolor: c.accent.hover },
+              }}
+            >
+              Start chat
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<AddIcon />}
+              onClick={handleCreate}
+              sx={{
+                color: c.accent.primary,
+                borderColor: c.border.medium,
+                borderRadius: 2,
+                textTransform: 'none',
+                fontWeight: 500,
+                px: 2,
+              }}
+            >
+              New dashboard
+            </Button>
+          </Box>
         </Box>
 
         <Box sx={{ mb: 3 }}>
