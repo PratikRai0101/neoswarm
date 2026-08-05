@@ -154,7 +154,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 |---------|----------------|--------------|
 | `neoswarm auth login` | ✅ | Interactive provider setup |
 | `neoswarm auth logout` | ✅ | Remove credentials |
-| `neoswarm auth status` | 🟡 | Works through the backend, but the legacy CLI needs cleanup |
+| `neoswarm auth status` | ✅ | Shows API-key, subscription-token, Copilot, Ollama, and custom-provider status without exposing secrets |
 | Auth storage | ✅ | `settings.json` plus OS keychain, with owner-only file fallback |
 | API key input | ✅ | Settings UI and CLI support direct provider keys |
 | OAuth (future) | 🟡 | Tool OAuth and Copilot device flow exist; direct model-provider OAuth remains future work |
