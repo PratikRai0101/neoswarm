@@ -15,7 +15,8 @@ class GenerateImageTool(BaseTool):
     name = "GenerateImage"
     description = (
         "Generate an image from a prompt using the configured OpenAI image provider "
-        "and save it to the local Artifact workspace."
+        "and save it to the local Artifact workspace. This may incur provider "
+        "charges, so use only after the user has approved the generation."
     )
 
     def __init__(self, settings: AppSettings | None = None):

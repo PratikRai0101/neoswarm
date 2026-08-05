@@ -3,6 +3,10 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
@@ -32,14 +36,20 @@ const Images: React.FC = () => {
   const [quality, setQuality] = useState('medium');
   const [format, setFormat] = useState('png');
   const [background, setBackground] = useState('auto');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const handleFormatChange = (value: string) => {
     setFormat(value);
     if (value === 'jpeg' && background === 'transparent') setBackground('auto');
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = () => {
     if (!prompt.trim()) return;
+    setConfirmOpen(true);
+  };
+
+  const confirmGenerate = async () => {
+    setConfirmOpen(false);
     await dispatch(generateImage({
       prompt: prompt.trim(),
       model,
@@ -81,7 +91,7 @@ const Images: React.FC = () => {
               <FormControl size="small"><InputLabel>Format</InputLabel><Select value={format} label="Format" onChange={(event) => handleFormatChange(event.target.value)}><MenuItem value="png">PNG</MenuItem><MenuItem value="jpeg">JPEG</MenuItem><MenuItem value="webp">WEBP</MenuItem></Select></FormControl>
               <FormControl size="small" sx={{ gridColumn: '1 / -1' }}><InputLabel>Background</InputLabel><Select value={background} label="Background" onChange={(event) => setBackground(event.target.value)}><MenuItem value="auto">Auto</MenuItem><MenuItem value="opaque">Opaque</MenuItem><MenuItem value="transparent" disabled={format === 'jpeg'}>Transparent</MenuItem></Select></FormControl>
             </Box>
-            <Button variant="contained" fullWidth startIcon={generating ? <CircularProgress size={17} color="inherit" /> : <AutoAwesomeOutlinedIcon />} disabled={generating || !prompt.trim()} onClick={() => void handleGenerate()} sx={{ mt: 2 }}>{generating ? 'Generating…' : 'Generate image'}</Button>
+            <Button variant="contained" fullWidth startIcon={generating ? <CircularProgress size={17} color="inherit" /> : <AutoAwesomeOutlinedIcon />} disabled={generating || !prompt.trim()} onClick={handleGenerate} sx={{ mt: 2 }}>{generating ? 'Generating…' : 'Generate image'}</Button>
           </Box>
 
           <Box sx={{ minHeight: 520, p: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: `1px solid ${c.border.subtle}`, borderRadius: 3, bgcolor: c.bg.surface }}>
@@ -104,6 +114,22 @@ const Images: React.FC = () => {
           </Box>
         </Box>
       </Box>
+
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Confirm image generation</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: c.text.secondary, fontSize: '0.9rem' }}>
+            This will send your prompt to OpenAI and may incur provider charges. The generated image will be downloaded into your local Artifact workspace.
+          </Typography>
+          <Typography sx={{ color: c.text.tertiary, fontSize: '0.78rem', mt: 1.5 }}>
+            Model: {model} · Quality: {quality} · Size: {size}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={() => void confirmGenerate()}>Continue</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
