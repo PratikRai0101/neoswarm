@@ -40,6 +40,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 import Settings from '@/app/pages/Settings/Settings';
 import DynamicIsland from '@/app/components/DynamicIsland';
+import AppGrantIsland from '@/app/components/AppGrantIsland';
 import Dashboard from '@/app/pages/Dashboard/Dashboard';
 import DashboardHost from '@/app/components/Layout/DashboardHost';
 import { useLastDashboardId } from '@/shared/hooks/useLastDashboardId';
@@ -425,6 +426,7 @@ const AppShell: React.FC = () => {
         </Tooltip>
 
         <DynamicIsland />
+        <AppGrantIsland />
 
         <Box sx={{ flex: 1 }} />
 
