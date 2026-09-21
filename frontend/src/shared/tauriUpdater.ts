@@ -11,6 +11,64 @@ interface UpdateSnapshot {
 
 type UpdateListener<T> = (value: T) => void;
 
+const NO_UPDATE_KEY = 'neoswarm:no-update';
+
+/** Opt-out escape hatch (mirrors OPENSWARM_NO_UPDATE=1): skips all checks. */
+export function isUpdateCheckSkipped(): boolean {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(NO_UPDATE_KEY) === '1') {
+      return true;
+    }
+  } catch {
+    // Storage unavailable: updates stay enabled.
+  }
+  return false;
+}
+
+export function setUpdateCheckSkipped(skipped: boolean): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (skipped) localStorage.setItem(NO_UPDATE_KEY, '1');
+      else localStorage.removeItem(NO_UPDATE_KEY);
+    }
+  } catch {
+    // Storage unavailable: ignore.
+  }
+}
+
+function splitVersion(version: string): { nums: number[]; tag: string } {
+  const clean = version.trim().replace(/^v/i, '');
+  const [core, ...rest] = clean.split('-');
+  return {
+    nums: core.split('.').map((part) => {
+      const num = parseInt(part, 10);
+      return Number.isFinite(num) ? num : 0;
+    }),
+    tag: rest.join('-'),
+  };
+}
+
+/** Numeric-aware version compare; a release outranks its own prereleases. */
+export function compareVersions(a: string, b: string): number {
+  const left = splitVersion(a);
+  const right = splitVersion(b);
+  const width = Math.max(left.nums.length, right.nums.length);
+  for (let i = 0; i < width; i += 1) {
+    const diff = (left.nums[i] ?? 0) - (right.nums[i] ?? 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  if (left.tag === right.tag) return 0;
+  if (!left.tag) return 1;
+  if (!right.tag) return -1;
+  return left.tag < right.tag ? -1 : 1;
+}
+
+/** Never self-downgrade: only strictly newer versions count as available. */
+export function isNewerVersion(current: string, candidate: string): boolean {
+  if (!current || !candidate) return true;
+  return compareVersions(candidate, current) > 0;
+}
+
 let singleton: NeoSwarmAPI | null = null;
 let pendingUpdate: Update | null = null;
 let snapshot: UpdateSnapshot = { status: 'idle', info: null, error: null };
@@ -42,9 +100,25 @@ function setDownloaded(): void {
 
 async function checkForUpdates(): Promise<{ success: boolean; version?: string; error?: string }> {
   try {
+    if (isUpdateCheckSkipped()) {
+      return { success: false, error: 'Update checks are disabled' };
+    }
     const update = await check();
     pendingUpdate = update;
     if (!update) {
+      snapshot = { status: 'not-available', info: null, error: null };
+      notAvailableListeners.forEach((listener) => listener({ version: '' }));
+      return { success: true };
+    }
+
+    let current = '';
+    try {
+      current = await getVersion();
+    } catch {
+      // Unknown current version: trust the feed.
+    }
+    if (!isNewerVersion(current, update.version)) {
+      pendingUpdate = null;
       snapshot = { status: 'not-available', info: null, error: null };
       notAvailableListeners.forEach((listener) => listener({ version: '' }));
       return { success: true };

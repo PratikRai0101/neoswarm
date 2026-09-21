@@ -84,4 +84,70 @@ describe('Tauri updater lifecycle', () => {
       error: 'signature verification failed',
     });
   });
+
+  it('never self-downgrades to an older or equal version', async () => {
+    mocks.getVersion.mockResolvedValue('1.7.11');
+    mocks.check.mockResolvedValue({
+      version: '1.7.10',
+      date: '2026-08-04T00:00:00Z',
+      body: 'older',
+      download: vi.fn(),
+      install: vi.fn(),
+    });
+    const api = getTauriUpdater();
+    const notAvailable = vi.fn();
+    api?.onUpdateNotAvailable?.(notAvailable);
+    await expect(api?.checkForUpdates?.()).resolves.toEqual({ success: true });
+    expect(notAvailable).toHaveBeenCalled();
+  });
+
+  it('treats prereleases as older than their release', async () => {
+    mocks.getVersion.mockResolvedValue('1.8.0');
+    mocks.check.mockResolvedValue({
+      version: '1.8.0-exp.1',
+      date: '2026-09-18T00:00:00Z',
+      body: 'experimental',
+      download: vi.fn(),
+      install: vi.fn(),
+    });
+    const api = getTauriUpdater();
+    await expect(api?.checkForUpdates?.()).resolves.toEqual({ success: true });
+    await expect(api?.getUpdateStatus?.()).resolves.toMatchObject({ status: 'not-available' });
+  });
+
+  it('supports an opt-out escape hatch', async () => {
+    const { isUpdateCheckSkipped, setUpdateCheckSkipped } = await import('./tauriUpdater');
+    const store = new Map<string, string>();
+    (globalThis as any).localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v); },
+      removeItem: (k: string) => { store.delete(k); },
+    };
+    try {
+      expect(isUpdateCheckSkipped()).toBe(false);
+      setUpdateCheckSkipped(true);
+      expect(isUpdateCheckSkipped()).toBe(true);
+      const api = getTauriUpdater();
+      await expect(api?.checkForUpdates?.()).resolves.toEqual({
+        success: false,
+        error: 'Update checks are disabled',
+      });
+      setUpdateCheckSkipped(false);
+      expect(isUpdateCheckSkipped()).toBe(false);
+    } finally {
+      delete (globalThis as any).localStorage;
+    }
+  });
+});
+
+describe('update version compare', () => {
+  it('orders releases numerically, not lexicographically', async () => {
+    const { compareVersions, isNewerVersion } = await import('./tauriUpdater');
+    expect(compareVersions('1.7.9', '1.7.11')).toBe(-1);
+    expect(compareVersions('1.7.11', '1.7.11')).toBe(0);
+    expect(compareVersions('1.8.0', '1.7.11')).toBe(1);
+    expect(compareVersions('v1.7.11', '1.7.11')).toBe(0);
+    expect(isNewerVersion('1.7.11', '1.8.0-exp.1')).toBe(true);
+    expect(isNewerVersion('1.8.0', '1.8.0-exp.1')).toBe(false);
+  });
 });
