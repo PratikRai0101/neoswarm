@@ -6,6 +6,7 @@ import re
 import logging
 import secrets
 import shutil
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
@@ -88,27 +89,65 @@ _pending_oauth: dict[str, dict] = {}
 
 
 def _load_all() -> list[ToolDefinition]:
+    """Load every tool, isolating damaged files so one bad connector can't
+    stop the tools list (or every new chat) while preserving the file."""
     result = []
     if not os.path.exists(DATA_DIR):
         return result
     for fname in os.listdir(DATA_DIR):
         if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(ToolDefinition(**json.load(f)))
+            path = os.path.join(DATA_DIR, fname)
+            try:
+                with open(path) as f:
+                    result.append(ToolDefinition(**json.load(f)))
+            except Exception as exc:
+                logger.error(
+                    "Skipping damaged tool file %s (preserved on disk): %s",
+                    path,
+                    exc,
+                )
     return result
 
 
 def _save(tool: ToolDefinition):
-    with open(os.path.join(DATA_DIR, f"{tool.id}.json"), "w") as f:
-        json.dump(tool.model_dump(), f, indent=2)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    destination = os.path.join(DATA_DIR, f"{tool.id}.json")
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f"{tool.id}-", suffix=".tmp", dir=DATA_DIR
+    )
+    try:
+        with os.fdopen(descriptor, "w") as f:
+            json.dump(tool.model_dump(), f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
 
 def _load(tool_id: str) -> ToolDefinition:
     path = os.path.join(DATA_DIR, f"{tool_id}.json")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Tool not found")
-    with open(path) as f:
-        return ToolDefinition(**json.load(f))
+    try:
+        with open(path) as f:
+            return ToolDefinition(**json.load(f))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Tool file %s is damaged: %s", path, exc)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tool file is damaged and was left untouched: {tool_id}",
+        ) from exc
 
 
 @tools_lib.router.get("/builtin")

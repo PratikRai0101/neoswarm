@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from uuid import uuid4
@@ -25,27 +26,69 @@ OLD_LAYOUT_FILE = os.path.join(OLD_LAYOUT_DIR, "layout.json")
 
 
 def _load_all() -> list[Dashboard]:
+    """Load every dashboard, skipping damaged files without losing them.
+
+    A garbled dashboard file must never wipe the board: it is left on disk
+    (logged loudly) so the user can repair or restore it, while every other
+    dashboard keeps working.
+    """
     result = []
     if not os.path.exists(DATA_DIR):
         return result
     for fname in os.listdir(DATA_DIR):
         if fname.endswith(".json"):
-            with open(os.path.join(DATA_DIR, fname)) as f:
-                result.append(Dashboard(**json.load(f)))
+            path = os.path.join(DATA_DIR, fname)
+            try:
+                with open(path) as f:
+                    result.append(Dashboard(**json.load(f)))
+            except Exception as exc:
+                logger.error(
+                    "Skipping damaged dashboard file %s (preserved on disk): %s",
+                    path,
+                    exc,
+                )
     return result
 
 
 def _save(dashboard: Dashboard):
-    with open(os.path.join(DATA_DIR, f"{dashboard.id}.json"), "w") as f:
-        json.dump(dashboard.model_dump(mode="json"), f, indent=2)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    destination = os.path.join(DATA_DIR, f"{dashboard.id}.json")
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f"{dashboard.id}-", suffix=".tmp", dir=DATA_DIR
+    )
+    try:
+        with os.fdopen(descriptor, "w") as f:
+            json.dump(dashboard.model_dump(mode="json"), f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
 
 def _load(dashboard_id: str) -> Dashboard:
     path = os.path.join(DATA_DIR, f"{dashboard_id}.json")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Dashboard not found")
-    with open(path) as f:
-        return Dashboard(**json.load(f))
+    try:
+        with open(path) as f:
+            return Dashboard(**json.load(f))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Dashboard file %s is damaged: %s", path, exc)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Dashboard file is damaged and was left untouched: {dashboard_id}",
+        ) from exc
 
 
 def _delete(dashboard_id: str):
@@ -83,12 +126,32 @@ def _migrate_if_needed():
             if not fname.endswith(".json"):
                 continue
             fpath = os.path.join(SESSIONS_DIR, fname)
-            with open(fpath) as f:
-                session_data = json.load(f)
-            session_data["dashboard_id"] = dashboard.id
-            with open(fpath, "w") as f:
-                json.dump(session_data, f, indent=2)
-            count += 1
+            try:
+                with open(fpath) as f:
+                    session_data = json.load(f)
+                session_data["dashboard_id"] = dashboard.id
+                descriptor, temporary = tempfile.mkstemp(
+                    prefix="session-", suffix=".tmp", dir=SESSIONS_DIR
+                )
+                try:
+                    with os.fdopen(descriptor, "w") as f:
+                        json.dump(session_data, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(temporary, fpath)
+                except Exception:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                    try:
+                        os.unlink(temporary)
+                    except OSError:
+                        pass
+                    raise
+                count += 1
+            except Exception:
+                logger.warning(f"Skipping unreadable session file {fname} during migration")
         if count:
             logger.info(f"Tagged {count} existing chat sessions with dashboard_id={dashboard.id}")
 
@@ -342,7 +405,23 @@ async def duplicate_dashboard(dashboard_id: str):
             "browser_cards": source_data.get("layout", {}).get("browser_cards", {}),
         },
     }
-    with open(os.path.join(DATA_DIR, f"{new_id}.json"), "w") as f:
-        json.dump(new_dashboard, f, indent=2)
+    destination = os.path.join(DATA_DIR, f"{new_id}.json")
+    descriptor, temporary = tempfile.mkstemp(prefix=f"{new_id}-", suffix=".tmp", dir=DATA_DIR)
+    try:
+        with os.fdopen(descriptor, "w") as f:
+            json.dump(new_dashboard, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
     return new_dashboard
