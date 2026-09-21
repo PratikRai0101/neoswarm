@@ -45,8 +45,15 @@ class MainApp:
                 try:
                     yield
                 finally:
-                    # Shutdown starts here: arm the hard-exit fuse so a wedged
-                    # sub-app teardown cannot hang the process forever.
+                    # Shutdown starts here: drain in-flight browser commands
+                    # so agents fail fast, then arm the hard-exit fuse so a
+                    # wedged sub-app teardown cannot hang the process forever.
+                    try:
+                        from backend.apps.agents.ws_manager import ws_manager
+
+                        ws_manager.cancel_browser_commands("Backend is shutting down")
+                    except Exception:
+                        pass
                     arm_shutdown_fuse()
             disarm_shutdown_fuse()
 

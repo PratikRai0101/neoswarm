@@ -36,6 +36,10 @@ class ConnectionManager:
         self.global_connections = [
             ws for ws in self.global_connections if ws != websocket
         ]
+        if not self.global_connections:
+            # No dashboard left to answer browser commands: fail them now
+            # with an honest error instead of hanging until the 30s timeout.
+            self.cancel_browser_commands("Dashboard disconnected")
 
     async def send_to_session(self, session_id: str, event: str, data: dict):
         """Send a message to all connections watching a specific session."""
@@ -122,5 +126,18 @@ class ConnectionManager:
         future = self.browser_futures.get(request_id)
         if future and not future.done():
             future.set_result(result)
+
+    def cancel_browser_commands(self, reason: str) -> int:
+        """Fail every in-flight browser command (reload/shutdown/disconnect).
+
+        Returns the number of commands cancelled. Lets agents adapt at once
+        instead of waiting out each command's timeout.
+        """
+        count = 0
+        for request_id, future in list(self.browser_futures.items()):
+            if future and not future.done():
+                future.set_result({"error": reason})
+                count += 1
+        return count
 
 ws_manager = ConnectionManager()
