@@ -447,8 +447,8 @@ neoswarm server           # Start backend server
 - Native AgentLoop built-ins: filesystem, shell, question, web, memory, scheduling, and Git tools; configured MCP/browser delegation runs through `MCPClientManager`
 - Persistent memory lives under the configured data root in `memory/`; schedules live under `schedules/`
 - Native desktop control is optional (`backend/requirements-computer.txt`) and defaults to approval-required policy
-- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 191 tests pass)
-- Upstream port: `upstream` remote tracks `openswarm-ai/openswarm`; Phase A (resilience) is ported — shutdown fuse, atomic + damaged-file-tolerant persistence (settings/dashboards/tools), scheduler concurrency cap (3) + missed-fire notes, hedged DDG/Bing/Brave search with tier breaker, clearer credential errors; Phase B (browser parity) is ported — in-flight command drain on disconnect/shutdown, bounded observations, RequestUserText answer/cancel, dashboard-less one-line error, browser-last-resort routing, BrowserHover verb, user takeover with agent pause, popup tabs with opener return
+- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 202 tests pass)
+- Upstream port: `upstream` remote tracks `openswarm-ai/openswarm`; Phase A (resilience) is ported — shutdown fuse, atomic + damaged-file-tolerant persistence (settings/dashboards/tools), scheduler concurrency cap (3) + missed-fire notes, hedged DDG/Bing/Brave search with tier breaker, clearer credential errors; Phase B (browser parity) is ported — in-flight command drain on disconnect/shutdown, bounded observations, RequestUserText answer/cancel, dashboard-less one-line error, browser-last-resort routing, BrowserHover verb, user takeover with agent pause, popup tabs with opener return; Phase C (apps platform) is ported — per-app identity tokens, deny-by-default grant gate with approval cards, host LLM/tools/spawn SDK, in-view NeoSwarm client, token+grant reaping on delete
 
 ---
 
