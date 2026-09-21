@@ -16,6 +16,11 @@ from backend.apps.scheduler.models import ScheduleCreate, ScheduleUpdate, Schedu
 
 logger = logging.getLogger(__name__)
 
+# At most this many schedules run at once. Extra due fires stay queued (their
+# next_run_at remains due) and are picked up on a later tick, so a burst of
+# timers can never become a burst of live agents.
+MAX_CONCURRENT_RUNS = 3
+
 
 def _now() -> datetime:
     return datetime.now().astimezone()
@@ -33,6 +38,7 @@ class ScheduleStore:
         self.tasks = {}
         if not self.directory.exists():
             return
+        now = _now()
         for path in self.directory.glob("*.json"):
             try:
                 task = ScheduledTask.model_validate_json(path.read_text())
@@ -42,7 +48,19 @@ class ScheduleStore:
             if task.status == "running":
                 task.status = "scheduled" if task.enabled else "disabled"
                 task.last_error = "Backend restarted before this schedule completed"
-                task.updated_at = _now()
+                task.updated_at = now
+            elif (
+                task.enabled
+                and task.status == "scheduled"
+                and task.next_run_at is not None
+                and task.next_run_at < now
+            ):
+                # The timer elapsed while the backend was stopped. Keep the
+                # fire due (the loop picks it up immediately) and say so.
+                task.last_error = (
+                    "Missed fire while the backend was stopped; queued to run now"
+                )
+                task.updated_at = now
             self.tasks[task.id] = task
         for task in self.tasks.values():
             self.save(task)
@@ -174,6 +192,9 @@ class Scheduler:
         await self._dispatch(task, force=True)
         return task
 
+    def _active_runs(self) -> int:
+        return sum(1 for task in self._run_tasks if not task.done())
+
     async def _run_loop(self) -> None:
         while True:
             now = self.clock()
@@ -181,6 +202,9 @@ class Scheduler:
                 if not task.enabled or task.status == "running":
                     continue
                 if task.next_run_at and task.next_run_at <= now:
+                    if self._active_runs() >= MAX_CONCURRENT_RUNS:
+                        # Slot full: leave this fire due for a later tick.
+                        continue
                     run_task = asyncio.create_task(self._dispatch(task), name=f"neoswarm-schedule-{task.id}")
                     self._run_tasks.add(run_task)
                     run_task.add_done_callback(self._run_tasks.discard)
@@ -188,6 +212,9 @@ class Scheduler:
 
     async def _dispatch(self, task: ScheduledTask, force: bool = False) -> None:
         if not force and (not task.enabled or task.status == "running"):
+            return
+        if not force and self._active_runs() >= MAX_CONCURRENT_RUNS:
+            # No slot: keep the fire due so the loop retries next tick.
             return
         if not self.agent_manager:
             task.status = "failed"
