@@ -212,6 +212,29 @@ TOOLS = [
         },
     },
     {
+        "name": "BrowserHover",
+        "description": (
+            "Hover the pointer over an element identified by a CSS selector. "
+            "Use this to open :hover menus, dropdowns, and tooltips before "
+            "reading or clicking their contents."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "browser_id": {
+                    "type": "string",
+                    "description": "The browser card ID.",
+                },
+                "tab_id": TAB_ID_PROP,
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector of the element to hover.",
+                },
+            },
+            "required": ["browser_id", "selector"],
+        },
+    },
+    {
         "name": "BrowserWait",
         "description": (
             "Wait for a specified duration. Useful after navigation or actions that "
@@ -322,6 +345,7 @@ def handle_tool_call(tool_name: str, arguments: dict) -> dict:
         "BrowserGetElements": "get_elements",
         "BrowserScroll": "scroll",
         "BrowserWait": "wait",
+        "BrowserHover": "hover",
     }
     action = action_map.get(tool_name)
     if not action:

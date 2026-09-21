@@ -304,6 +304,24 @@ BROWSER_TOOLS_SCHEMA = [
         },
     },
     {
+        "name": "BrowserHover",
+        "description": (
+            "Hover the pointer over an element identified by a CSS selector. "
+            "Use this to open :hover menus, dropdowns, and tooltips before "
+            "reading or clicking their contents."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector of the element to hover.",
+                },
+            },
+            "required": ["selector"],
+        },
+    },
+    {
         "name": "BrowserBatch",
         "description": (
             "Run a sequence of browser actions in one tool call. Each sub-action "
@@ -319,7 +337,8 @@ BROWSER_TOOLS_SCHEMA = [
             "- click: { selector: str }\n"
             "- scroll: { direction?: 'up'|'down', amount?: int }\n"
             "- wait: { milliseconds?: int }\n"
-            "- navigate: { url: str }\n\n"
+            "- navigate: { url: str }\n"
+            "- hover: { selector: str }\n\n"
             "Example: { actions: [{type: 'click_index', params: {index: 1}}, "
             "{type: 'wait', params: {milliseconds: 500}}, "
             "{type: 'press_key', params: {key: 'ArrowRight'}}] }"
@@ -335,7 +354,7 @@ BROWSER_TOOLS_SCHEMA = [
                         "properties": {
                             "type": {
                                 "type": "string",
-                                "enum": ["click_index", "press_key", "type", "wait", "scroll", "navigate", "click"],
+                                "enum": ["click_index", "press_key", "type", "wait", "scroll", "navigate", "click", "hover"],
                             },
                             "params": {"type": "object"},
                         },
@@ -457,6 +476,7 @@ ACTION_MAP = {
     "BrowserPressKey": "press_key",
     "BrowserListInteractives": "list_interactives",
     "BrowserClickIndex": "click_index",
+    "BrowserHover": "hover",
     "BrowserBatch": "batch",
 }
 
@@ -548,7 +568,11 @@ SYSTEM_PROMPT = (
     "- Login walls (the user thinks they're logged in but the session expired)\n"
     "- Captchas, 2FA prompts, age verification gates\n"
     "- Anything genuinely ambiguous about user intent\n"
-    "Don't use it for normal tool failures — try a different approach first.\n\n"
+    "Don't use it for normal tool failures — try a different approach first.\n"
+    "Use RequestUserText when you need a typed answer (a choice, a confirmation,\n"
+    "or information only the user knows) rather than an action in the browser.\n"
+    "If a tool result says the browser is under user control, stop acting on it:\n"
+    "tell the user what you were doing and ask them to return the browser.\n\n"
 
     "## Tool reference\n"
     "- BrowserScreenshot: visual snapshot. Use sparingly, not after every action.\n"
@@ -557,11 +581,14 @@ SYSTEM_PROMPT = (
     "- BrowserScroll: handles nested scroll containers (Notion, Gmail). Returns "
     "atTop/atBottom — stop looping when scroll delta is 0.\n"
     "- BrowserGetElements: enumerate interactive elements with selectors.\n"
-    "- BrowserClick / BrowserType: standard DOM interaction.\n"
-    "- BrowserPressKey: native key events (preferred for shortcuts).\n"
+"- BrowserClick / BrowserType: standard DOM interaction.\n"
+"- BrowserHover: open :hover menus, dropdowns, and tooltips before interacting.\n"
+"- BrowserPressKey: native key events (preferred for shortcuts).\n"
     "- BrowserEvaluate: arbitrary JS for everything else, including text-based element "
     "search and reading state. Avoid for scrolling and keyboard events.\n"
-    "- BrowserWait: 1-3s after navigation, 0.5s after most clicks.\n\n"
+    "- BrowserWait: 1-3s after navigation, 0.5s after most clicks.\n"
+"- Popups open as their own card tabs (their opener is remembered); closing a\n"
+"popup tab returns to the page that spawned it.\n\n"
 
     "Complete the task autonomously and report a clear, brief summary."
 )

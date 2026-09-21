@@ -63,6 +63,7 @@ BUILTIN_TOOLS: list[BuiltinTool] = [
     BuiltinTool(name="BrowserPressKey", description="Press a keyboard key (native event, works on sites that ignore JS-dispatched events)", category="browser_action"),
     BuiltinTool(name="BrowserListInteractives", description="List interactive elements via the accessibility tree (works on hostile sites with no semantic HTML)", category="browser_action"),
     BuiltinTool(name="BrowserClickIndex", description="Click an element by its index from BrowserListInteractives (uses native mouse events)", category="browser_action"),
+    BuiltinTool(name="BrowserHover", description="Hover over an element to open :hover menus, dropdowns, and tooltips", category="browser_action"),
     BuiltinTool(name="BrowserBatch", description="Run a sequence of browser actions in one tool call with URL-change abort guard", category="browser_action"),
     BuiltinTool(name="ReportProgress", description="Record evaluation of previous action, working memory, and next goal (required before action tools)", category="browser_action"),
     BuiltinTool(name="RequestHumanIntervention", description="Pause the browser agent and ask the user for help (login, captcha, 2FA, etc.)", category="browser_action"),
