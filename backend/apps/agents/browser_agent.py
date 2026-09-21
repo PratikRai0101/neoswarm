@@ -117,6 +117,176 @@ _LOOP_WARNING_TEXT = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Dead-card and stagnation guards (ported from upstream browser_loop)
+#
+# A card the agent cannot make progress on — either gone (closed, or the
+# dashboard is not mounted) or hung (every command times out) — looks identical
+# to a transient failure from inside the loop. Retrying just burns the whole
+# turn budget, so a sustained pattern fails fast instead. The streak resets on
+# any good result, so a merely-busy page that recovers is never mistaken for
+# dead.
+# ---------------------------------------------------------------------------
+
+_CARD_GONE_MARKERS = (
+    "not an electron webview",    # card closed / destroyed
+    "no dashboard is connected",  # dashboard view not mounted
+    "command timed out",          # hung: the command never came back
+    "page unresponsive",          # hung: the page never responded
+    "browser webview",            # Tauri: "Browser webview '<label>' was not found"
+    "was not found",              # card missing in either host
+)
+CARD_GONE_LIMIT = 2  # consecutive misses before giving up (absorbs one transient)
+
+
+def card_is_unavailable(result: dict) -> bool:
+    """True when the browser card is gone or wedged, so retrying cannot help."""
+    err = str(result.get("error") or "").lower()
+    return any(marker in err for marker in _CARD_GONE_MARKERS)
+
+
+_FAILURE_MARKERS = (
+    "error", "not found", "no longer valid", "no box model",
+    "no valid bounding rect", "failed", "rejected", "timed out",
+    "could not", "unable to", "denied",
+)
+
+
+def looks_like_failure(text: str) -> bool:
+    low = (text or "").lower()
+    return any(marker in low for marker in _FAILURE_MARKERS)
+
+
+# Read-only / meta tools never count toward stagnation: re-orienting is not
+# being stuck.
+STAGNATION_ESCALATION_AT = 3
+STAGNATION_MAX = 5
+
+
+def is_unproductive(
+    tool_name: str, result: dict, prev_url: str, prev_text: str,
+) -> bool:
+    """True if a state-mutating action changed nothing observable.
+
+    A URL change or a success-shaped result gets the benefit of the doubt (a
+    click that opens a dropdown changes no URL but is real progress). An error,
+    a failure-shaped message, or the exact same observation as the previous
+    action — all with no URL change — counts as unproductive.
+    """
+    if tool_name in _LOOP_DETECTION_EXCLUDED_TOOLS:
+        return False
+    new_url = str(result.get("url") or "")
+    if new_url and prev_url and new_url != prev_url:
+        return False
+    if "error" in result:
+        return True
+    text = str(result.get("text") or result.get("error") or "")
+    if looks_like_failure(text):
+        return True
+    if prev_text and text[:200] == prev_text[:200]:
+        return True
+    return False
+
+
+_STAGNATION_NUDGE = (
+    "NO PROGRESS: your last {streak} actions changed nothing and looked like "
+    "failures. Before trying yet another variation, find out WHY: read the exact "
+    "errors; use BrowserEvaluate to check whether the target is disabled, hidden, "
+    "or behind an overlay; take ONE BrowserGetText or BrowserScreenshot to confirm "
+    "the page is what you think (not a login wall, captcha, or error page). Act on "
+    "the real cause; only if it is truly a selector miss do you walk the ladder "
+    "(BrowserListInteractives + BrowserClickIndex, then BrowserPressKey, then "
+    "find-by-text with BrowserEvaluate)."
+)
+
+
+def stagnation_nudge(streak: int) -> str:
+    base = _STAGNATION_NUDGE.format(streak=streak)
+    if streak >= STAGNATION_MAX:
+        base += (
+            " Switching selectors hasn't worked, so the PLAN itself is likely "
+            "wrong: step back and revise your overall approach (a different page, "
+            "route, or entry point), not just the selector. If you still cannot "
+            "make progress, call RequestHumanIntervention."
+        )
+    return base
+
+
+def advance_stagnation(
+    streak: int, prev_url: str, prev_text: str, tool_name: str, result: dict,
+) -> tuple[int, str, str, str | None]:
+    """Advance the stagnation streak for one executed tool.
+
+    Neutral read/meta tools pass through unchanged. For a state-mutating action
+    the streak bumps when unproductive and resets otherwise. Returns
+    (new_streak, new_prev_url, new_prev_text, nudge_or_None).
+    """
+    if tool_name in _LOOP_DETECTION_EXCLUDED_TOOLS:
+        return streak, prev_url, prev_text, None
+    if is_unproductive(tool_name, result, prev_url, prev_text):
+        streak += 1
+    else:
+        streak = 0
+    new_url = str(result.get("url") or "") or prev_url
+    new_text = str(result.get("text") or result.get("error") or "")[:200]
+    nudge = (
+        stagnation_nudge(streak)
+        if streak in (STAGNATION_ESCALATION_AT, STAGNATION_MAX)
+        else None
+    )
+    return streak, new_url, new_text, nudge
+
+
+def stagnation_exhausted(streak: int) -> bool:
+    """True once deterministic nudging has been exhausted."""
+    return streak >= STAGNATION_MAX
+
+
+# ---------------------------------------------------------------------------
+# Completion honesty gate
+#
+# A model that ends its turn is not proof the goal happened. This gate
+# reality-checks the run before the status is allowed to say "done", so a fake
+# success is reported as the failure it is. It is deliberately conservative: it
+# flags only unambiguous ghosts.
+# ---------------------------------------------------------------------------
+
+# State-changing tools: a task that needed to DO something must land one.
+_PRODUCTIVE_TOOLS = {
+    "BrowserClick", "BrowserClickIndex", "BrowserType", "BrowserNavigate",
+    "BrowserPressKey", "BrowserScroll", "BrowserBatch", "BrowserHover",
+}
+# Read/extract tools: a look-only task's evidence is that a read returned content.
+_READ_TOOLS = {
+    "BrowserGetText", "BrowserGetElements", "BrowserListInteractives",
+    "BrowserScreenshot", "BrowserEvaluate",
+}
+
+
+def completion_is_honest(action_log: list[dict]) -> tuple[bool, str]:
+    """Reality-check a run the model declared done. Returns (honest, reason).
+
+    Flags only the unambiguous ghosts: a run that took no action at all, one
+    whose every state-changing action errored, or one that only looked around
+    without any read returning content. A partially erroring run that still
+    landed a real action stays honest.
+    """
+    if not action_log:
+        return False, "declared done without taking a single action"
+    actions = [a for a in action_log if a.get("tool") in _PRODUCTIVE_TOOLS]
+    actions_ok = [a for a in actions if a.get("ok")]
+    reads_ok = [
+        a for a in action_log
+        if a.get("tool") in _READ_TOOLS and a.get("ok")
+        and str(a.get("result_summary") or "").strip()
+    ]
+    if actions and not actions_ok:
+        return False, "every state-changing action failed"
+    if not actions and not reads_ok:
+        return False, "only looked around: no action taken and no content read back"
+    return True, ""
+
+
 BROWSER_TOOLS_SCHEMA = [
     {
         "name": "ReportProgress",
@@ -821,6 +991,12 @@ async def run_browser_agent(
     # Loop detection state — sliding window of recent state-mutating tool calls
     recent_tool_calls: list[tuple[str, str, str]] = []
     loop_trigger_count = 0
+    # Dead-card and stagnation state (see the guards above).
+    card_gone_streak = 0
+    card_gone = False
+    stagnation_streak = 0
+    prev_obs_url = ""
+    prev_obs_text = ""
 
     user_msg = Message(role="user", content=task)
     session.messages.append(user_msg)
@@ -1102,6 +1278,9 @@ async def run_browser_agent(
                     "input": tu.input,
                     "result_summary": result.get("text", result.get("error", ""))[:200],
                     "elapsed_ms": elapsed_ms,
+                    # execute_browser_tool reports failure as an "error" key, so
+                    # this is the structural success signal the honesty gate uses.
+                    "ok": "error" not in result,
                 })
 
                 if tu.name == "BrowserScreenshot" and result.get("image"):
@@ -1130,6 +1309,22 @@ async def run_browser_agent(
                     content_blocks = content_blocks + [
                         {"type": "text", "text": f"\n\n⚠️ {warning}"}
                     ]
+
+                # Stagnation: state-mutating actions that change nothing and keep
+                # looking like failures. Nudge at the escalation thresholds so the
+                # model revises its plan instead of cycling selectors.
+                stagnation_streak, prev_obs_url, prev_obs_text, nudge = advance_stagnation(
+                    stagnation_streak, prev_obs_url, prev_obs_text, tu.name, result,
+                )
+                if nudge:
+                    logger.warning(
+                        f"[browser-agent {session_id}] stagnation streak "
+                        f"{stagnation_streak} on {tu.name}"
+                    )
+                    content_blocks = content_blocks + [
+                        {"type": "text", "text": f"\n\n⚠️ {nudge}"}
+                    ]
+
                 tool_results.append(provider.format_tool_result(tu.id, content_blocks))
 
                 result_text = result.get("text", result.get("error", ""))
@@ -1143,9 +1338,26 @@ async def run_browser_agent(
                     "message": result_msg.model_dump(mode="json"),
                 })
 
+                # Dead card: a sustained pattern means the browser is gone or
+                # wedged, so retrying only burns the rest of the turn budget.
+                if card_is_unavailable(result):
+                    card_gone_streak += 1
+                    if card_gone_streak >= CARD_GONE_LIMIT:
+                        logger.warning(
+                            f"[browser-agent {session_id}] browser card "
+                            f"{browser_id} is unavailable — failing fast"
+                        )
+                        card_gone = True
+                        break
+                else:
+                    card_gone_streak = 0
+
             messages.append(ProviderMessage(role="tool_result", content=tool_results))
 
             if cancelled:
+                break
+
+            if card_gone:
                 break
 
             # Hard cap on loops: if the model keeps repeating itself even
@@ -1192,6 +1404,33 @@ async def run_browser_agent(
         _browser_history[history_key] = _trim_provider_history(
             messages, _MAX_HISTORY_MESSAGES,
         )
+
+        # A model that ends its turn is not proof the goal happened. Reality-check
+        # before the status is allowed to say "completed".
+        honest, reason = completion_is_honest(action_log)
+        if not honest:
+            error_text = f"Browser agent finished without evidence of success: {reason}."
+            logger.warning(f"[browser-agent {session_id}] {error_text}")
+            session.status = "error"
+            err_msg = Message(role="system", content=f"Error: {error_text}")
+            session.messages.append(err_msg)
+            await ws_manager.send_to_session(session_id, "agent:message", {
+                "session_id": session_id,
+                "message": err_msg.model_dump(mode="json"),
+            })
+            await ws_manager.send_to_session(session_id, "agent:status", {
+                "session_id": session_id,
+                "status": "error",
+                "session": session.model_dump(mode="json"),
+            })
+            return {
+                "session_id": session_id,
+                "browser_id": browser_id,
+                "summary": summary,
+                "error": error_text,
+                "action_log": action_log,
+                "final_screenshot": final_screenshot,
+            }
 
         session.status = "completed"
         agent_manager._fire_session_completed(session)
