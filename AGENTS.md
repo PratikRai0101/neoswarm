@@ -447,7 +447,8 @@ neoswarm server           # Start backend server
 - Native AgentLoop built-ins: filesystem, shell, question, web, memory, scheduling, and Git tools; configured MCP/browser delegation runs through `MCPClientManager`
 - Persistent memory lives under the configured data root in `memory/`; schedules live under `schedules/`
 - Native desktop control is optional (`backend/requirements-computer.txt`) and defaults to approval-required policy
-- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 172 tests pass)
+- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 184 tests pass)
+- Upstream port: `upstream` remote tracks `openswarm-ai/openswarm`; Phase A (resilience) is ported — shutdown fuse, atomic + damaged-file-tolerant persistence (settings/dashboards/tools), scheduler concurrency cap (3) + missed-fire notes, hedged DDG/Bing/Brave search with tier breaker, clearer credential errors
 
 ---
 
