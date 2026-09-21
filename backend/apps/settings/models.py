@@ -87,6 +87,7 @@ class CustomProvider(BaseModel):
     name: str
     base_url: str
     api_key: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
     models: list[dict[str, Any]] = Field(default_factory=list)
 
     @field_validator("name")

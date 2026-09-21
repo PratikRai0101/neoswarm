@@ -28,12 +28,17 @@ class OpenAICompatProvider(BaseProvider):
         self,
         api_key: str = "",
         base_url: str | None = None,
+        default_headers: dict[str, str] | None = None,
     ):
         kwargs: dict[str, Any] = {}
         # Always set api_key — use "none" as placeholder if empty (some endpoints don't need real keys)
         kwargs["api_key"] = api_key if api_key else "none"
         if base_url:
             kwargs["base_url"] = base_url
+        # Some gateways require identifying headers, for example a stable
+        # per-conversation session id used for routing and prompt caching.
+        if default_headers:
+            kwargs["default_headers"] = default_headers
         self.client = AsyncOpenAI(**kwargs)
 
     async def close(self) -> None:

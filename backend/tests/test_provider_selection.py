@@ -293,6 +293,42 @@ def test_auxiliary_provider_check_accepts_oauth_tokens():
     assert not _provider_is_configured(oauth_only, "openai")
 
 
+def test_custom_provider_headers_reach_the_client():
+    settings = AppSettings(
+        custom_providers=[
+            CustomProvider(
+                name="OpenCode Go",
+                base_url="https://opencode.ai/zen/go/v1",
+                api_key="sk-test",
+                headers={
+                    "x-opencode-session": "session-1",
+                    "User-Agent": "neoswarm/0.1.0",
+                },
+                models=[{"value": "deepseek-v4-flash", "label": "DeepSeek V4 Flash"}],
+            )
+        ]
+    )
+
+    provider = create_provider("OpenCode Go", settings)
+    headers = provider.client.default_headers
+
+    assert headers["x-opencode-session"] == "session-1"
+    # A gateway can require a non-SDK user agent, so the override must win.
+    assert headers["User-Agent"] == "neoswarm/0.1.0"
+
+
+def test_custom_provider_without_headers_is_unchanged():
+    settings = AppSettings(
+        custom_providers=[
+            CustomProvider(name="Plain Gateway", base_url="https://plain.example/v1", api_key="k")
+        ]
+    )
+
+    provider = create_provider("Plain Gateway", settings)
+
+    assert "x-opencode-session" not in provider.client.default_headers
+
+
 @pytest.mark.asyncio
 async def test_list_models_surfaces_oauth_connected_provider(monkeypatch):
     import httpx

@@ -313,6 +313,7 @@ def create_provider(
         return OpenAICompatProvider(
             api_key=provider_config.get("api_key", ""),
             base_url=provider_config.get("base_url", ""),
+            default_headers=provider_config.get("headers") or None,
         )
 
     # Resolve custom providers before the built-in API fallback. Unknown names
@@ -323,6 +324,7 @@ def create_provider(
             return OpenAICompatProvider(
                 api_key=custom_provider.api_key,
                 base_url=custom_provider.base_url,
+                default_headers=custom_provider.headers or None,
             )
 
     api_type = _get_api_type(provider_name)
