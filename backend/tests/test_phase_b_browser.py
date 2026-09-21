@@ -100,3 +100,34 @@ def test_browser_context_routes_browser_last(monkeypatch):
     assert context is not None
     assert "LAST resort" in context
     assert "WebSearch" in context
+
+
+@pytest.mark.asyncio
+async def test_user_controlled_browser_fails_fast():
+    manager = ws_module.ConnectionManager()
+    assert manager.take_browser_control("b1") is True
+    assert manager.take_browser_control("b1") is False
+    assert manager.is_browser_controlled("b1") is True
+
+    ws = FakeWS()
+    await manager.connect_global(ws)
+    result = await manager.send_browser_command("req-9", "click", "b1", {})
+    assert "under user control" in result["error"]
+    assert manager.browser_futures == {}
+
+    assert manager.release_browser_control("b1") is True
+    assert manager.release_browser_control("b1") is False
+    assert manager.is_browser_controlled("b1") is False
+    manager.disconnect_global(ws)
+
+
+def test_browser_hover_registered_everywhere():
+    from backend.apps.agents.browser_agent import ACTION_MAP, BROWSER_TOOLS_SCHEMA
+
+    assert ACTION_MAP["BrowserHover"] == "hover"
+    by_name = {item["name"]: item for item in BROWSER_TOOLS_SCHEMA}
+    assert "BrowserHover" in by_name
+    assert by_name["BrowserHover"]["input_schema"]["required"] == ["selector"]
+    assert "RequestUserText" in by_name
+    batch = by_name["BrowserBatch"]
+    assert "hover" in batch["input_schema"]["properties"]["actions"]["items"]["properties"]["type"]["enum"]
