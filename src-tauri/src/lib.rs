@@ -115,6 +115,16 @@ pub fn run() {
             browser::browser_reload,
             browser::browser_history,
             browser::browser_url,
+            browser::browser_click,
+            browser::browser_type,
+            browser::browser_scroll,
+            browser::browser_press_key,
+            browser::browser_screenshot,
+            browser::browser_get_text,
+            browser::browser_get_elements,
+            browser::browser_list_interactives,
+            browser::browser_click_index,
+            browser::browser_wait,
             open_artifact,
         ])
         .setup(|app| {
