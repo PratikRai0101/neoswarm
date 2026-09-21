@@ -44,6 +44,7 @@ import {
 } from '@/app/components/richEditorUtils';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { fetchModes } from '@/shared/state/modesSlice';
+import { polishDictation, useDictation } from '@/shared/useDictation';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { providerIdForGroup } from '@/shared/models';
 
@@ -558,6 +559,25 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
     updateHasContent();
     setTimeout(() => editor.focus(), 0);
   };
+
+  const insertDictatedText = useCallback((text: string) => {
+    const editor = editorRef.current;
+    if (!editor || !text) return;
+    editor.focus();
+    // execCommand keeps undo + input events working like pasted text.
+    const inserted = document.execCommand('insertText', false, text);
+    if (!inserted) {
+      editor.appendChild(document.createTextNode(text));
+    }
+    handleInput();
+  }, [handleInput]);
+
+  const handleDictatedFinal = useCallback(async (raw: string) => {
+    const cleaned = await polishDictation(raw);
+    insertDictatedText(cleaned.endsWith(' ') ? cleaned : `${cleaned} `);
+  }, [insertDictatedText]);
+
+  const dictation = useDictation(handleDictatedFinal);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (picker.visible && ['ArrowDown', 'ArrowUp', 'Escape', 'Tab', 'Enter'].includes(e.key)) {
@@ -1349,16 +1369,29 @@ const ChatInput = forwardRef<ChatInputHandle, Props>(({ onSend, disabled, mode, 
                   <StopIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
-            ) : !hasContent ? (
-              <Tooltip title="Voice input (coming soon)">
+            ) : !hasContent && dictation.supported ? (
+              <Tooltip
+                title={
+                  dictation.error ?? (dictation.listening
+                    ? (dictation.interim ? `Listening… “${dictation.interim}”` : 'Listening… click to stop')
+                    : 'Dictate with your voice')
+                }
+              >
                 <span>
                   <IconButton
                     size="small"
-                    disabled
+                    onClick={() => { if (dictation.listening) dictation.stop(); else dictation.start(); }}
                     sx={{
-                      color: c.text.tertiary,
+                      color: dictation.listening ? c.status.error : c.text.tertiary,
                       p: 0.5,
-                      '&.Mui-disabled': { color: c.text.ghost },
+                      ...(dictation.listening && {
+                        animation: 'dictation-pulse 1.4s ease-in-out infinite',
+                        '@keyframes dictation-pulse': {
+                          '0%, 100%': { opacity: 0.55, transform: 'scale(0.92)' },
+                          '50%': { opacity: 1, transform: 'scale(1.08)' },
+                        },
+                      }),
+                      '&:hover': { color: dictation.listening ? c.status.error : c.text.secondary },
                     }}
                   >
                     <MicNoneOutlinedIcon sx={{ fontSize: 18 }} />
