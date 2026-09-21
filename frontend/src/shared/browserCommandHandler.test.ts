@@ -85,4 +85,138 @@ describe('browser command bridge', () => {
     });
     cleanup();
   });
+
+  async function runTauriAction(data: Record<string, unknown>): Promise<void> {
+    mocks.tauriBrowser.isTauriRuntime.mockReturnValue(true);
+    let handler: ((data: Record<string, unknown>) => Promise<void>) | undefined;
+    mocks.dashboardWs.on.mockImplementation((_event: string, callback: typeof handler) => {
+      handler = callback;
+      return vi.fn();
+    });
+
+    const cleanup = initBrowserCommandHandler();
+    await handler?.(data);
+    cleanup();
+  }
+
+  it('routes a Tauri click through browser_click with the webview label', async () => {
+    mocks.core.invoke.mockResolvedValue({
+      text: 'Clicked element: button',
+      url: 'https://example.com',
+      clickX: 0.25,
+      clickY: 0.75,
+    });
+
+    await runTauriAction({
+      request_id: 'click-1',
+      action: 'click',
+      browser_id: 'browser-1',
+      tab_id: 'tab-1',
+      params: { selector: '#submit' },
+    });
+
+    expect(mocks.core.invoke).toHaveBeenCalledWith('browser_click', {
+      label: 'browser-1:tab-1',
+      selector: '#submit',
+    });
+    expect(mocks.dashboardWs.send).toHaveBeenCalledWith('browser:result', {
+      request_id: 'click-1',
+      text: 'Clicked element: button',
+      url: 'https://example.com',
+      clickX: 0.25,
+      clickY: 0.75,
+    });
+  });
+
+  it('routes a Tauri type through browser_type with selector and text', async () => {
+    mocks.core.invoke.mockResolvedValue({ text: 'Typed into: input', url: 'https://example.com' });
+
+    await runTauriAction({
+      request_id: 'type-1',
+      action: 'type',
+      browser_id: 'browser-1',
+      tab_id: 'tab-1',
+      params: { selector: '#search', text: 'hello world' },
+    });
+
+    expect(mocks.core.invoke).toHaveBeenCalledWith('browser_type', {
+      label: 'browser-1:tab-1',
+      selector: '#search',
+      text: 'hello world',
+    });
+  });
+
+  it('routes a Tauri scroll through browser_scroll with direction and amount', async () => {
+    mocks.core.invoke.mockResolvedValue({
+      text: 'Scrolled up by 250px',
+      scrolled: 250,
+      scrollTop: 0,
+      scrollHeight: 2000,
+      clientHeight: 600,
+      atTop: true,
+      atBottom: false,
+      target: 'window',
+      url: 'https://example.com',
+    });
+
+    await runTauriAction({
+      request_id: 'scroll-1',
+      action: 'scroll',
+      browser_id: 'browser-1',
+      tab_id: 'tab-1',
+      params: { direction: 'up', amount: 250 },
+    });
+
+    expect(mocks.core.invoke).toHaveBeenCalledWith('browser_scroll', {
+      label: 'browser-1:tab-1',
+      direction: 'up',
+      amount: 250,
+    });
+  });
+
+  it('routes a Tauri screenshot through browser_screenshot', async () => {
+    mocks.core.invoke.mockResolvedValue({ image: 'aGVsbG8=', url: 'https://example.com' });
+
+    await runTauriAction({
+      request_id: 'shot-1',
+      action: 'screenshot',
+      browser_id: 'browser-1',
+      tab_id: 'tab-1',
+      params: {},
+    });
+
+    expect(mocks.core.invoke).toHaveBeenCalledWith('browser_screenshot', { label: 'browser-1:tab-1' });
+    expect(mocks.dashboardWs.send).toHaveBeenCalledWith('browser:result', {
+      request_id: 'shot-1',
+      image: 'aGVsbG8=',
+      url: 'https://example.com',
+    });
+  });
+
+  it('dispatches each Tauri batch item through the native command bridge', async () => {
+    mocks.core.invoke.mockResolvedValue({ text: 'ok', url: 'https://example.com' });
+
+    await runTauriAction({
+      request_id: 'batch-1',
+      action: 'batch',
+      browser_id: 'browser-1',
+      tab_id: 'tab-1',
+      params: {
+        actions: [
+          { type: 'click', params: { selector: '#a' } },
+          { type: 'type', params: { selector: '#q', text: 'hi' } },
+        ],
+      },
+    });
+
+    expect(mocks.core.invoke).toHaveBeenNthCalledWith(1, 'browser_click', {
+      label: 'browser-1:tab-1',
+      selector: '#a',
+    });
+    expect(mocks.core.invoke).toHaveBeenNthCalledWith(2, 'browser_type', {
+      label: 'browser-1:tab-1',
+      selector: '#q',
+      text: 'hi',
+    });
+  });
 });

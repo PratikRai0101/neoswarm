@@ -636,7 +636,7 @@ async function handleTauriBrowserAction(
 
   switch (action) {
     case 'screenshot':
-      return { error: 'Screenshots for Tauri child webviews are not available on this platform yet.' };
+      return (await invoke('browser_screenshot', { label })) || {};
     case 'navigate': {
       const target = params.url as string;
       if (!target) return { error: 'url parameter is required' };
@@ -645,23 +645,20 @@ async function handleTauriBrowserAction(
       return { text: `Navigated to ${resolved}`, url: resolved };
     }
     case 'get_text': {
-      const value = await tauriEval(label, '(()=>({text:document.body?.innerText?.substring(0,15000)||"",url:location.href,title:document.title}))()');
-      return value || { text: '', url: await url() };
+      const selector = (params.selector as string) ?? '';
+      return (await invoke('browser_get_text', { label, selector })) || {};
     }
     case 'click': {
       const selector = params.selector as string;
       if (!selector) return { error: 'selector parameter is required' };
-      const safe = JSON.stringify(selector);
-      return (await tauriEval(label, `(()=>{const el=document.querySelector(${safe});if(!el)return {error:"Element not found: "+${safe}};el.scrollIntoView({block:"center"});el.click();return {text:"Clicked element: "+el.tagName.toLowerCase(),url:location.href,clickX:50,clickY:50}})()`)) || {};
+      return (await invoke('browser_click', { label, selector })) || {};
     }
     case 'type': {
       const selector = params.selector as string;
       const text = params.text as string;
       if (!selector) return { error: 'selector parameter is required' };
       if (text == null) return { error: 'text parameter is required' };
-      const safeSelector = JSON.stringify(selector);
-      const safeText = JSON.stringify(text);
-      return (await tauriEval(label, `(()=>{const el=document.querySelector(${safeSelector});if(!el)return {error:"Element not found: "+${safeSelector}};el.focus();if("value" in el)el.value=${safeText};else el.textContent=${safeText};el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));return {text:"Typed into: "+el.tagName.toLowerCase()}})()`)) || {};
+      return (await invoke('browser_type', { label, selector, text })) || {};
     }
     case 'evaluate': {
       const expression = params.expression as string;
@@ -669,37 +666,29 @@ async function handleTauriBrowserAction(
       const value = await tauriEval(label, `(()=>(${expression}))()`);
       return { text: resultText(value), url: await url() };
     }
-    case 'get_elements': {
-      const selector = (params.selector as string) || 'body';
-      const safe = JSON.stringify(selector);
-      const value = await tauriEval(label, `(()=>{const root=document.querySelector(${safe})||document.body;const nodes=[...root.querySelectorAll("a,button,input,textarea,select,[role=button],[tabindex]")].slice(0,100);return {elements:nodes.map((el,i)=>({index:i+1,tag:el.tagName.toLowerCase(),text:(el.textContent||"").trim().substring(0,120),placeholder:el.placeholder||null,ariaLabel:el.getAttribute("aria-label"),role:el.getAttribute("role")})),total:nodes.length,url:location.href,title:document.title}})()`);
-      return { text: resultText(value), ...(value || {}) };
-    }
+    case 'get_elements':
+      return (await invoke('browser_get_elements', { label })) || {};
     case 'scroll': {
-      const direction = params.direction === 'up' ? -1 : 1;
+      const direction = params.direction === 'up' ? 'up' : 'down';
       const amount = Math.max(1, Number(params.amount) || 500);
-      const value = await tauriEval(label, `(()=>{const delta=${direction * amount};const root=document.scrollingElement||document.documentElement;root.scrollBy({top:delta,behavior:"smooth"});return {text:"Scrolled",scrollTop:root.scrollTop,url:location.href}})()`);
-      return value || {};
+      return (await invoke('browser_scroll', { label, direction, amount })) || {};
     }
     case 'wait': {
-      await new Promise((resolve) => window.setTimeout(resolve, Math.min(30000, Math.max(0, Number(params.milliseconds) || 500))));
-      return { text: 'Wait complete', url: await url() };
+      const milliseconds = Math.min(30000, Math.max(0, Number(params.milliseconds) || 500));
+      return (await invoke('browser_wait', { label, milliseconds })) || {};
     }
     case 'press_key': {
       const key = String(params.key || '');
       if (!key) return { error: 'key parameter is required' };
-      const safe = JSON.stringify(key);
-      return (await tauriEval(label, `(()=>{const target=document.activeElement||document.body;target.dispatchEvent(new KeyboardEvent("keydown",{key:${safe},code:${safe},bubbles:true}));target.dispatchEvent(new KeyboardEvent("keyup",{key:${safe},code:${safe},bubbles:true}));return {text:"Pressed ${key.replace(/"/g, '\\"')}"}})()`)) || {};
+      return (await invoke('browser_press_key', { label, key })) || {};
     }
-    case 'list_interactives': {
-      const value = await tauriEval(label, '(()=>{const nodes=[...document.querySelectorAll("a,button,input,textarea,select,[role=button],[tabindex]")].filter(el=>!el.disabled).slice(0,100);const elements=nodes.map((el,index)=>({index:index+1,role:el.getAttribute("role")||el.tagName.toLowerCase(),name:(el.getAttribute("aria-label")||el.innerText||el.placeholder||"").trim().substring(0,80)}));return {text:elements.map(el=>`[${el.index}]<${el.role} "${el.name}">`).join("\\n")||"No interactive elements found on this page.",elements,url:location.href}})()');
-      return value || {};
-    }
+    case 'list_interactives':
+      return (await invoke('browser_list_interactives', { label })) || {};
     case 'click_index': {
       const index = Number(params.index);
       if (!Number.isFinite(index) || index < 1) return { error: 'index parameter is required and must be a positive integer' };
-      const value = await tauriEval(label, `(()=>{const nodes=[...document.querySelectorAll("a,button,input,textarea,select,[role=button],[tabindex]")].filter(el=>!el.disabled);const el=nodes[${Math.floor(index) - 1}];if(!el)return {error:"Index ${Math.floor(index)} is not available"};el.scrollIntoView({block:"center"});el.click();return {text:"Clicked index ${Math.floor(index)}",clickX:50,clickY:50,url:location.href}})()`);
-      return value || {};
+      const selector = (params.selector as string) ?? '';
+      return (await invoke('browser_click_index', { label, selector, index: Math.floor(index) })) || {};
     }
     case 'batch': {
       const actions = Array.isArray(params.actions) ? params.actions.slice(0, 5) : [];
