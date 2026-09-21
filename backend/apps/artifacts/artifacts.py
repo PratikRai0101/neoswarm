@@ -209,6 +209,26 @@ async def get_artifact(artifact_id: str):
     return _serialize(_load(artifact_id))
 
 
+@artifacts.router.get("/{artifact_id}/preview")
+async def preview_artifact(artifact_id: str):
+    """Structured preview for office documents and spreadsheets.
+
+    Returns bounded JSON (paragraphs, slides, sheets); the raw bytes always
+    stay available through /content (inline) and /download (byte-exact).
+    """
+    from backend.apps.artifacts.preview import extract_preview
+
+    artifact = _load(artifact_id)
+    content_path = next((path for path in _content_candidates(artifact) if path.is_file()), None)
+    if content_path is None:
+        raise HTTPException(status_code=404, detail="Artifact content not found")
+    try:
+        content = content_path.read_bytes()
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="Could not read artifact content") from exc
+    return extract_preview(content, artifact.filename)
+
+
 @artifacts.router.delete("/{artifact_id}")
 async def delete_artifact(artifact_id: str):
     artifact = _load(artifact_id)
