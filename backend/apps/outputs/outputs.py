@@ -32,14 +32,42 @@ def _validate_against_schema(data: dict, schema: dict) -> str | None:
 from backend.config.paths import OUTPUTS_DIR as DATA_DIR, OUTPUTS_WORKSPACE_DIR as WORKSPACE_DIR
 
 
-def _build_data_injection(input_json: str, result_json: str) -> str:
-    """Build a <script> tag that sets OUTPUT_INPUT / OUTPUT_BACKEND_RESULT
-    and listens for postMessage updates."""
+def _build_data_injection(input_json: str, result_json: str, app_token: str = "") -> str:
+    """Build a <script> tag that sets OUTPUT_INPUT / OUTPUT_BACKEND_RESULT,
+    listens for postMessage updates, and exposes the window.NeoSwarm host
+    client (LLM, grant-gated tools, agent spawn) authenticated as this app."""
     return (
         "<script>\n"
         "(function() {\n"
         "  window.OUTPUT_INPUT = " + input_json + ";\n"
         "  window.OUTPUT_BACKEND_RESULT = " + result_json + ";\n"
+        "  window.NEOSWARM_APP_TOKEN = " + json.dumps(app_token) + ";\n"
+        "  window.NeoSwarm = {\n"
+        "    token: window.NEOSWARM_APP_TOKEN,\n"
+        "    call: async function(path, body) {\n"
+        "      const r = await fetch('/api/apps' + path, {\n"
+        "        method: 'POST',\n"
+        "        headers: {\n"
+        "          'Content-Type': 'application/json',\n"
+        "          'X-NeoSwarm-App-Token': window.NEOSWARM_APP_TOKEN || '',\n"
+        "        },\n"
+        "        body: JSON.stringify(body || {}),\n"
+        "      });\n"
+        "      const data = await r.json().catch(function() { return {}; });\n"
+        "      if (!r.ok) throw new Error((data && data.detail) || ('Request failed: ' + r.status));\n"
+        "      return data;\n"
+        "    },\n"
+        "    llm: function(prompt, opts) {\n"
+        "      return window.NeoSwarm.call('/llm', Object.assign({ prompt: prompt }, opts || {}));\n"
+        "    },\n"
+        "    toolList: function() { return window.NeoSwarm.call('/tools/list', {}); },\n"
+        "    callTool: function(tool, args) {\n"
+        "      return window.NeoSwarm.call('/tools/call', { tool: tool, args: args || {} });\n"
+        "    },\n"
+        "    spawnAgent: function(prompt, opts) {\n"
+        "      return window.NeoSwarm.call('/agents/spawn', Object.assign({ prompt: prompt }, opts || {}));\n"
+        "    },\n"
+        "  };\n"
         "  window.addEventListener('message', function(e) {\n"
         "    if (e.data && e.data.type === 'OUTPUT_DATA') {\n"
         "      window.OUTPUT_INPUT = e.data.input || {};\n"
@@ -52,8 +80,8 @@ def _build_data_injection(input_json: str, result_json: str) -> str:
     )
 
 
-def _inject_data_into_html(html: str, input_json: str = "{}", result_json: str = "null") -> str:
-    injection = _build_data_injection(input_json, result_json)
+def _inject_data_into_html(html: str, input_json: str = "{}", result_json: str = "null", app_token: str = "") -> str:
+    injection = _build_data_injection(input_json, result_json, app_token)
     if "</head>" in html:
         return html.replace("</head>", f"{injection}\n</head>", 1)
     if "<body" in html:
@@ -151,7 +179,11 @@ async def serve_workspace_file(workspace_id: str, filepath: str, _d: str = ""):
 
     if filepath == "index.html":
         input_json, result_json = _decode_data_param(_d) if _d else ("{}", "null")
-        content = _inject_data_into_html(content, input_json, result_json)
+        from backend.apps.applications.identity import mint_app_token
+
+        content = _inject_data_into_html(
+            content, input_json, result_json, mint_app_token(workspace_id)
+        )
 
     mime, _ = mimetypes.guess_type(filepath)
     return Response(content=content, media_type=mime or "text/plain")
@@ -167,7 +199,11 @@ async def serve_output_file(output_id: str, filepath: str, _d: str = ""):
 
     if filepath == "index.html":
         input_json, result_json = _decode_data_param(_d) if _d else ("{}", "null")
-        content = _inject_data_into_html(content, input_json, result_json)
+        from backend.apps.applications.identity import mint_app_token
+
+        content = _inject_data_into_html(
+            content, input_json, result_json, mint_app_token(output_id)
+        )
 
     mime, _ = mimetypes.guess_type(filepath)
     return Response(content=content, media_type=mime or "text/plain")
@@ -310,6 +346,12 @@ async def delete_output(output_id: str):
     path = os.path.join(DATA_DIR, f"{output_id}.json")
     if os.path.exists(path):
         os.remove(path)
+    # Reap the app's identity + remembered grants so deleted apps leave nothing behind.
+    from backend.apps.applications import grants as _app_grants
+    from backend.apps.applications.identity import revoke_app_token
+
+    revoke_app_token(output_id)
+    _app_grants.clear_grants(output_id)
     return {"ok": True}
 
 
