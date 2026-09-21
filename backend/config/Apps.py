@@ -29,13 +29,26 @@ class MainApp:
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
+            from backend.apps.service.shutdown_fuse import (
+                arm_shutdown_fuse,
+                disarm_shutdown_fuse,
+            )
+
+            # Clear any stale fuse (e.g. a test-suite lifespan that exited).
+            disarm_shutdown_fuse()
             async with AsyncExitStack() as stack:
                 for sub_app in sub_apps:
                     debug_fn(sub_app.name)
                     await stack.enter_async_context(sub_app.lifespan())
                 _port = os.environ.get("NEOSWARM_PORT", "8324")
                 print(f"\nCheck out the API docs at: http://127.0.0.1:{_port}/docs\n")
-                yield
+                try:
+                    yield
+                finally:
+                    # Shutdown starts here: arm the hard-exit fuse so a wedged
+                    # sub-app teardown cannot hang the process forever.
+                    arm_shutdown_fuse()
+            disarm_shutdown_fuse()
 
         self.app = FastAPI(lifespan=lifespan)
 
