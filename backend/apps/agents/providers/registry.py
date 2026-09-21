@@ -13,6 +13,10 @@ import logging
 from typing import Any, TYPE_CHECKING
 
 from backend.apps.agents.providers.base import BaseProvider
+from backend.apps.settings.credentials import (
+    get_provider_credentials,
+    resolve_credential,
+)
 
 if TYPE_CHECKING:
     from backend.apps.settings.models import AppSettings
@@ -326,15 +330,28 @@ def create_provider(
     if api_type == "anthropic":
         from backend.apps.agents.providers.anthropic import AnthropicProvider
 
-        if not settings.anthropic_api_key:
-            raise ValueError("Anthropic API key not configured. Set it in Settings.")
-        return AnthropicProvider(api_key=settings.anthropic_api_key)
+        # Raises with a credential-aware message when nothing is configured.
+        credentials = get_provider_credentials(settings, "anthropic")
+        if credentials.get("credential_type") in {"oauth", "subscription_token"}:
+            # The Anthropic SDK treats auth_token as a bearer credential, which
+            # is what both the OAuth and subscription flows issue.
+            return AnthropicProvider(auth_token=credentials.get("auth_token", ""))
+        return AnthropicProvider(api_key=credentials.get("api_key", ""))
 
     if api_type in {"openai", "codex"}:
-        if not settings.openai_api_key:
-            raise ValueError("OpenAI API key not configured. Set it in Settings.")
+        # Raises with a credential-aware message when nothing is configured.
+        credentials = get_provider_credentials(settings, "openai")
+        if credentials.get("credential_type") in {"oauth", "subscription_token"}:
+            # OpenAI-compatible bearer auth: the client forwards the credential
+            # as an Authorization header, so an OAuth access token fits the
+            # api_key slot without a second transport.
+            return OpenAICompatProvider(
+                api_key=credentials.get("auth_token", ""),
+                base_url="https://api.openai.com/v1",
+            )
         return OpenAICompatProvider(
-            api_key=settings.openai_api_key, base_url="https://api.openai.com/v1"
+            api_key=credentials.get("api_key", ""),
+            base_url="https://api.openai.com/v1",
         )
 
     if api_type in {"gemini", "gemini-cli"}:
@@ -400,9 +417,9 @@ def _has_credentials(provider_name: str, settings: AppSettings) -> bool:
     if api_type == "anthropic":
         if getattr(settings, "connection_mode", "own_key") == "managed":
             return bool(getattr(settings, "neoswarm_auth_token", None))
-        return bool(settings.anthropic_api_key)
+        return resolve_credential(settings, "anthropic") is not None
     if api_type == "openai":
-        return bool(settings.openai_api_key)
+        return resolve_credential(settings, "openai") is not None
     if api_type == "gemini":
         return bool(getattr(settings, "google_api_key", None))
     if api_type == "openrouter":

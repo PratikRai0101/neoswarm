@@ -18,6 +18,7 @@ from backend.apps.agents.providers.registry import (
     create_provider,
     provider_for_model,
     resolve_provider_name,
+    _has_credentials,
 )
 
 
@@ -214,3 +215,45 @@ async def test_session_infers_provider_from_launch_and_model_switch(tmp_path, mo
     assert session.model == "sonnet"
     assert session.provider == "anthropic"
     assert session.needs_fork is True
+
+
+def test_anthropic_oauth_token_builds_bearer_provider():
+    provider = create_provider(
+        "anthropic", AppSettings(anthropic_oauth_token="oauth-anthropic")
+    )
+
+    assert getattr(provider.client, "auth_token", None) == "oauth-anthropic"
+    assert not getattr(provider.client, "api_key", None)
+
+
+def test_openai_oauth_token_builds_bearer_provider():
+    provider = create_provider("openai", AppSettings(openai_oauth_token="oauth-openai"))
+
+    # OpenAI-compatible bearer auth forwards the token through the api_key slot.
+    assert getattr(provider.client, "api_key", None) == "oauth-openai"
+
+
+def test_api_key_takes_precedence_over_oauth_token():
+    provider = create_provider(
+        "anthropic",
+        AppSettings(anthropic_api_key="sk-ant-key", anthropic_oauth_token="oauth-token"),
+    )
+
+    assert not getattr(provider.client, "auth_token", None)
+    assert getattr(provider.client, "api_key", None) == "sk-ant-key"
+
+
+def test_has_credentials_accepts_oauth_tokens():
+    assert not _has_credentials("anthropic", AppSettings())
+    assert not _has_credentials("openai", AppSettings())
+    assert _has_credentials("anthropic", AppSettings(anthropic_oauth_token="oauth"))
+    assert _has_credentials("openai", AppSettings(openai_oauth_token="oauth"))
+    assert _has_credentials("anthropic", AppSettings(anthropic_api_key="sk-ant-key"))
+
+
+def test_missing_credentials_error_mentions_oauth():
+    with pytest.raises(ValueError, match="OAuth"):
+        create_provider("anthropic", AppSettings())
+
+    with pytest.raises(ValueError, match="OAuth"):
+        create_provider("openai", AppSettings())
