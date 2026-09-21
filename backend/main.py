@@ -58,6 +58,7 @@ from backend.apps.ssh.ssh import ssh
 from backend.apps.images.images import images
 from backend.apps.dashboards.dashboards import dashboards
 from backend.apps.analytics.analytics import analytics
+from backend.apps.applications.apps import apps
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 import json
@@ -82,6 +83,7 @@ main_app = MainApp(
         images,
         dashboards,
         analytics,
+        apps,
     ]
 )
 app = main_app.app
