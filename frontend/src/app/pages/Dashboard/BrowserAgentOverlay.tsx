@@ -43,6 +43,7 @@ function summarizeMessage(msg: AgentMessage): { type: 'thought' | 'action' | 're
       case 'BrowserGetText': brief = 'Read page text'; break;
       case 'BrowserGetElements': brief = `Inspect elements${input.selector ? ` (${input.selector})` : ''}`; break;
       case 'BrowserEvaluate': brief = `Evaluate JS`; break;
+      case 'RequestUserText': brief = `Ask user "${(input.question || '').slice(0, 40)}"`; break;
       default: brief = tool;
     }
     return { type: 'action', text: brief };
@@ -65,6 +66,7 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   const [hidden, setHidden] = useState(false);
   const [showSkipInput, setShowSkipInput] = useState(false);
   const [skipReason, setSkipReason] = useState('');
+  const [textAnswer, setTextAnswer] = useState('');
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,6 +94,12 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   const interventionProblem = (intervention?.tool_input as any)?.problem || 'The browser agent needs your help.';
   const interventionInstruction = (intervention?.tool_input as any)?.instruction || '';
 
+  const textPrompt = session.pending_approvals?.find(
+    (a) => a.tool_name === 'RequestUserText',
+  );
+  const textQuestion = (textPrompt?.tool_input as any)?.question || 'The browser agent has a question.';
+  const textContext = (textPrompt?.tool_input as any)?.context || '';
+
   const prevSessionId = useRef(session.id);
   useEffect(() => {
     if (session.id !== prevSessionId.current) {
@@ -101,16 +109,20 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
       setConfirmStop(false);
       setShowSkipInput(false);
       setSkipReason('');
+      setTextAnswer('');
     }
   }, [session.id]);
 
-  // Reset skip input when intervention resolves
+  // Reset inputs when prompts resolve
   useEffect(() => {
     if (!intervention) {
       setShowSkipInput(false);
       setSkipReason('');
     }
-  }, [intervention]);
+    if (!textPrompt) {
+      setTextAnswer('');
+    }
+  }, [intervention, textPrompt]);
 
   useEffect(() => {
     if (isDone) {
@@ -296,8 +308,92 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
         )}
       </Box>
 
-      {/* Body — intervention prompt OR scrollable action log */}
-      {intervention ? (
+      {/* Body — text-answer prompt, intervention prompt, OR scrollable action log */}
+      {textPrompt ? (
+        <Box sx={{ flex: 1, px: 1.25, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Typography sx={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 }}>
+            {textQuestion}
+          </Typography>
+          {textContext && (
+            <Typography sx={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', lineHeight: 1.4 }}>
+              {textContext}
+            </Typography>
+          )}
+          <Box sx={{ display: 'flex', gap: 0.5, mt: 'auto', pt: 0.5, alignItems: 'center' }}>
+            <InputBase
+              autoFocus
+              placeholder="Type your answer…"
+              value={textAnswer}
+              onChange={(e) => setTextAnswer(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  dispatch(handleApproval({ requestId: textPrompt.id, behavior: 'allow', message: textAnswer }));
+                }
+                if (e.key === 'Escape') {
+                  dispatch(handleApproval({ requestId: textPrompt.id, behavior: 'deny' }));
+                }
+              }}
+              sx={{
+                flex: 1,
+                fontSize: '0.68rem',
+                color: 'rgba(255,255,255,0.8)',
+                bgcolor: 'rgba(255,255,255,0.08)',
+                borderRadius: '6px',
+                px: 1,
+                py: 0.3,
+                '& input::placeholder': { color: 'rgba(255,255,255,0.3)' },
+              }}
+            />
+            <IconButton
+              size="small"
+              onClick={() => dispatch(handleApproval({ requestId: textPrompt.id, behavior: 'allow', message: textAnswer }))}
+              sx={{
+                p: 0.4,
+                color: 'rgba(255,255,255,0.5)',
+                '&:hover': { color: 'rgba(255,255,255,0.8)' },
+              }}
+            >
+              <SendIcon sx={{ fontSize: 13 }} />
+            </IconButton>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 0.75 }}>
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => dispatch(handleApproval({ requestId: textPrompt.id, behavior: 'allow', message: textAnswer }))}
+              sx={{
+                bgcolor: '#38bdf8',
+                '&:hover': { bgcolor: '#0ea5e9' },
+                textTransform: 'none',
+                fontSize: '0.68rem',
+                fontWeight: 600,
+                borderRadius: '6px',
+                px: 1.5,
+                py: 0.4,
+                color: '#000',
+              }}
+            >
+              Answer
+            </Button>
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => dispatch(handleApproval({ requestId: textPrompt.id, behavior: 'deny' }))}
+              sx={{
+                color: 'rgba(255,255,255,0.4)',
+                '&:hover': { color: 'rgba(255,255,255,0.7)' },
+                textTransform: 'none',
+                fontSize: '0.68rem',
+                px: 1,
+                py: 0.4,
+                minWidth: 'auto',
+              }}
+            >
+              Cancel
+            </Button>
+          </Box>
+        </Box>
+      ) : intervention ? (
         <Box sx={{ flex: 1, px: 1.25, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Typography sx={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 }}>
             {interventionProblem}
