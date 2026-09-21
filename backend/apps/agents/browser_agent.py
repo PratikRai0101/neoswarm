@@ -62,6 +62,7 @@ _LOOP_DETECTION_EXCLUDED_TOOLS = {
     "BrowserWait",
     "ReportProgress",  # Phase 2
     "RequestHumanIntervention",
+    "RequestUserText",
 }
 
 _LOOP_WINDOW_SIZE = 5
@@ -417,6 +418,30 @@ BROWSER_TOOLS_SCHEMA = [
             "required": ["problem", "instruction"],
         },
     },
+    {
+        "name": "RequestUserText",
+        "description": (
+            "Ask the user a short question and wait for their typed answer — "
+            "for choices, credentials you must not guess, or confirmations that "
+            "need an explicit reply. The user's answer (or cancellation) is "
+            "returned as this tool's result. Prefer RequestHumanIntervention "
+            "when the user must DO something in the browser instead."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "One short question for the user.",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Optional one-line background shown with the question.",
+                },
+            },
+            "required": ["question"],
+        },
+    },
 ]
 
 ACTION_MAP = {
@@ -543,6 +568,10 @@ SYSTEM_PROMPT = (
 
 MAX_TURNS = 40
 
+# Largest text observation handed to the model. Larger pages are truncated
+# with an honest note (see _format_tool_result).
+_MAX_TOOL_TEXT_CHARS = 30_000
+
 # Tools that count as "action tools" — calling any of these in a turn requires
 # the model to also call ReportProgress in the same turn (after the first
 # turn). Read-only tools and meta tools are exempt.
@@ -575,7 +604,11 @@ async def execute_browser_tool(
 
 
 def _format_tool_result(result: dict, tool_name: str) -> list[dict]:
-    """Convert a browser command result into provider-agnostic content blocks."""
+    """Convert a browser command result into provider-agnostic content blocks.
+
+    Text observations are bounded so one huge page cannot flood the model's
+    context; the bound is reported honestly in the result itself.
+    """
     if "error" in result:
         return [{"type": "text", "text": f"Error: {result['error']}"}]
 
@@ -593,8 +626,14 @@ def _format_tool_result(result: dict, tool_name: str) -> list[dict]:
         ]
         return blocks
 
-    text = result.get("text", json.dumps(result))
-    return [{"type": "text", "text": str(text)}]
+    text = str(result.get("text", json.dumps(result)))
+    if len(text) > _MAX_TOOL_TEXT_CHARS:
+        text = (
+            text[:_MAX_TOOL_TEXT_CHARS]
+            + f"\n... (observation truncated at {_MAX_TOOL_TEXT_CHARS} chars; "
+            "use a scoped selector or BrowserGetText to read the rest)"
+        )
+    return [{"type": "text", "text": text}]
 
 
 async def _request_browser_approval(
@@ -652,6 +691,20 @@ async def run_browser_agent(
     Creates a visible AgentSession, streams progress via WebSocket,
     and returns the full action log + summary + final screenshot.
     """
+    if not browser_id and not dashboard_id:
+        # A dashboard-less session asking for a browser: say so in one line
+        # instead of starting a loop whose every tool call hangs and times out.
+        return {
+            "session_id": "",
+            "browser_id": "",
+            "summary": (
+                "Error: this session has no browser card. "
+                "Create one from a dashboard before delegating browser tasks."
+            ),
+            "action_log": [],
+            "final_screenshot": None,
+        }
+
     from backend.apps.agents.agent_manager import agent_manager
 
     _browser_perms = load_builtin_permissions()
@@ -924,6 +977,38 @@ async def run_browser_agent(
                             result_text = f"User skipped this intervention and said: \"{user_message}\"\nAddress what the user said and adapt your approach accordingly."
                         else:
                             result_text = "User skipped this intervention. Try a different approach or move on."
+                    tool_results.append(provider.format_tool_result(
+                        tu.id, [{"type": "text", "text": result_text}]
+                    ))
+                    result_msg = Message(
+                        role="tool_result",
+                        content={"text": result_text, "tool_name": tu.name, "elapsed_ms": 0},
+                    )
+                    session.messages.append(result_msg)
+                    await ws_manager.send_to_session(session_id, "agent:message", {
+                        "session_id": session_id,
+                        "message": result_msg.model_dump(mode="json"),
+                    })
+                    continue
+
+                # Handle RequestUserText — wait for the user's typed answer
+                if tu.name == "RequestUserText":
+                    question = tu.input.get("question", "")
+                    context = tu.input.get("context", "")
+                    decision = await _request_browser_approval(
+                        session, tu.name, {"question": question, "context": context},
+                    )
+                    if decision.get("behavior") != "deny":
+                        answer = (decision.get("message") or "").strip()
+                        if answer:
+                            result_text = f"User answered: \"{answer}\""
+                        else:
+                            result_text = "User acknowledged without typing an answer."
+                    else:
+                        result_text = (
+                            "User cancelled instead of answering. "
+                            "Proceed without the answer or try a different approach."
+                        )
                     tool_results.append(provider.format_tool_result(
                         tu.id, [{"type": "text", "text": result_text}]
                     ))
