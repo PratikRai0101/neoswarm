@@ -33,14 +33,14 @@ describe('browser command bridge', () => {
   });
 
   it('clears activity when a command targets a missing browser webview', async () => {
-    let handler: ((data: Record<string, unknown>) => Promise<void>) | undefined;
-    mocks.dashboardWs.on.mockImplementation((_event: string, callback: typeof handler) => {
-      handler = callback;
+    const handlers = new Map<string, (data: Record<string, unknown>) => Promise<void>>();
+    mocks.dashboardWs.on.mockImplementation((event: string, callback: (data: Record<string, unknown>) => Promise<void>) => {
+      handlers.set(event, callback);
       return vi.fn();
     });
 
     const cleanup = initBrowserCommandHandler();
-    await handler?.({
+    await handlers.get('browser:command')?.({
       request_id: 'request-1',
       action: 'get_text',
       browser_id: 'missing-browser',
@@ -59,14 +59,14 @@ describe('browser command bridge', () => {
   it('routes Tauri navigation through the native command bridge', async () => {
     mocks.tauriBrowser.isTauriRuntime.mockReturnValue(true);
     mocks.core.invoke.mockResolvedValue(undefined);
-    let handler: ((data: Record<string, unknown>) => Promise<void>) | undefined;
-    mocks.dashboardWs.on.mockImplementation((_event: string, callback: typeof handler) => {
-      handler = callback;
+    const handlers = new Map<string, (data: Record<string, unknown>) => Promise<void>>();
+    mocks.dashboardWs.on.mockImplementation((event: string, callback: (data: Record<string, unknown>) => Promise<void>) => {
+      handlers.set(event, callback);
       return vi.fn();
     });
 
     const cleanup = initBrowserCommandHandler();
-    await handler?.({
+    await handlers.get('browser:command')?.({
       request_id: 'request-2',
       action: 'navigate',
       browser_id: 'browser-1',
@@ -88,14 +88,14 @@ describe('browser command bridge', () => {
 
   async function runTauriAction(data: Record<string, unknown>): Promise<void> {
     mocks.tauriBrowser.isTauriRuntime.mockReturnValue(true);
-    let handler: ((data: Record<string, unknown>) => Promise<void>) | undefined;
-    mocks.dashboardWs.on.mockImplementation((_event: string, callback: typeof handler) => {
-      handler = callback;
+    const handlers = new Map<string, (data: Record<string, unknown>) => Promise<void>>();
+    mocks.dashboardWs.on.mockImplementation((event: string, callback: (data: Record<string, unknown>) => Promise<void>) => {
+      handlers.set(event, callback);
       return vi.fn();
     });
 
     const cleanup = initBrowserCommandHandler();
-    await handler?.(data);
+    await handlers.get('browser:command')?.(data);
     cleanup();
   }
 

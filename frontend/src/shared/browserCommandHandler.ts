@@ -1,12 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getWebview, getActiveTabId, type BrowserWebview } from './browserRegistry';
+import { isBrowserControlled, setBrowserControlled } from './browserControl';
 import { dashboardWs } from './ws/WebSocketManager';
 import { resolveInput } from './resolveUrl';
 import { isTauriRuntime, tauriBrowserLabel } from './tauriBrowser';
 
 let initialized = false;
 
-export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'batch';
+export type BrowserAction = 'screenshot' | 'get_text' | 'navigate' | 'click' | 'type' | 'evaluate' | 'get_elements' | 'scroll' | 'wait' | 'press_key' | 'list_interactives' | 'click_index' | 'hover' | 'batch';
 
 export interface BrowserActivity {
   action: BrowserAction;
@@ -50,6 +51,7 @@ const ACTION_LABELS: Record<string, string> = {
   press_key: 'Pressing key...',
   list_interactives: 'Reading page structure...',
   click_index: 'Clicking element...',
+  hover: 'Hovering...',
   batch: 'Running batch...',
 };
 
@@ -165,6 +167,36 @@ async function handlePressKey(wv: BrowserWebview, params: Record<string, any>): 
   wv.sendInputEvent({ type: 'char', keyCode });
   wv.sendInputEvent({ type: 'keyUp', keyCode });
   return { text: `Pressed ${rawKey}` };
+}
+
+async function handleHover(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
+  const selector = params.selector as string;
+  if (!selector) return { error: 'selector parameter is required' };
+  const safeSelector = JSON.stringify(selector);
+  const code = `(()=>{
+    const el = document.querySelector(${safeSelector});
+    if (!el) return { error: 'Element not found: ' + ${safeSelector} };
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const base = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+    if (typeof PointerEvent === 'function') {
+      el.dispatchEvent(new PointerEvent('pointerover', { ...base, pointerId: 1 }));
+      el.dispatchEvent(new PointerEvent('pointerenter', { ...base, pointerId: 1 }));
+      el.dispatchEvent(new PointerEvent('pointermove', { ...base, pointerId: 1 }));
+    }
+    el.dispatchEvent(new MouseEvent('mouseover', base));
+    el.dispatchEvent(new MouseEvent('mouseenter', base));
+    el.dispatchEvent(new MouseEvent('mousemove', base));
+    return {
+      text: 'Hovered element: ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
+      url: location.href,
+      hoverX: window.innerWidth > 0 ? (x / window.innerWidth) * 100 : 50,
+      hoverY: window.innerHeight > 0 ? (y / window.innerHeight) * 100 : 50,
+    };
+  })()`;
+  return wv.executeJavaScript(code);
 }
 
 // ---------------------------------------------------------------------------
@@ -371,7 +403,7 @@ const MAX_BATCH_ACTIONS = 5;
 
 type SubActionType =
   | 'click_index' | 'press_key' | 'type' | 'wait'
-  | 'scroll' | 'navigate' | 'click';
+  | 'scroll' | 'navigate' | 'click' | 'hover';
 
 const BATCH_DISPATCH: Record<SubActionType, (wv: BrowserWebview, p: Record<string, any>) => Promise<Record<string, any>>> = {
   click_index: handleClickIndex,
@@ -381,6 +413,7 @@ const BATCH_DISPATCH: Record<SubActionType, (wv: BrowserWebview, p: Record<strin
   scroll: handleScroll,
   navigate: handleNavigate,
   click: handleClick,
+  hover: handleHover,
 };
 
 async function handleBatch(wv: BrowserWebview, params: Record<string, any>): Promise<Record<string, any>> {
@@ -690,6 +723,11 @@ async function handleTauriBrowserAction(
       const selector = (params.selector as string) ?? '';
       return (await invoke('browser_click_index', { label, selector, index: Math.floor(index) })) || {};
     }
+    case 'hover': {
+      const selector = params.selector as string;
+      if (!selector) return { error: 'selector parameter is required' };
+      return (await invoke('browser_hover', { label, selector })) || {};
+    }
     case 'batch': {
       const actions = Array.isArray(params.actions) ? params.actions.slice(0, 5) : [];
       const results = [];
@@ -707,6 +745,15 @@ async function handleTauriBrowserAction(
 async function handleBrowserCommand(data: Record<string, any>) {
   const { request_id, action, browser_id, tab_id, params = {} } = data;
   if (!request_id) return;
+
+  if (isBrowserControlled(browser_id)) {
+    setActivity(browser_id, null);
+    dashboardWs.send('browser:result', {
+      request_id,
+      error: `Browser '${browser_id}' is under user control. Ask the user to return it to the agent, or wait for them to finish.`,
+    });
+    return;
+  }
 
   const detail = params.url || params.selector || params.expression || undefined;
   setActivity(browser_id, { action: action as BrowserAction, detail });
@@ -796,6 +843,9 @@ async function handleBrowserCommand(data: Record<string, any>) {
           });
         }
         break;
+      case 'hover':
+        result = await handleHover(wv, params);
+        break;
       case 'batch':
         result = await handleBatch(wv, params);
         break;
@@ -814,8 +864,14 @@ export function initBrowserCommandHandler(): () => void {
   if (initialized) return () => {};
   initialized = true;
   const unsub = dashboardWs.on('browser:command', handleBrowserCommand);
+  const unsubControl = dashboardWs.on('browser:control_changed', (data: Record<string, any>) => {
+    if (typeof data?.browser_id === 'string') {
+      setBrowserControlled(data.browser_id, data.controlled === true);
+    }
+  });
   return () => {
     unsub();
+    unsubControl();
     initialized = false;
   };
 }
