@@ -375,6 +375,11 @@ class AgentManager:
             "",
             "You do NOT have direct access to low-level browser tools (click, type, screenshot, etc.). "
             "Instead, describe what you want accomplished and the browser agent will handle the details.",
+            "",
+            "Routing: the browser is a LAST resort. Prefer native integrations when "
+            "connected (their MCP tools beat driving web pages), prefer WebSearch over "
+            "visiting a page to read news or facts, and prefer reading (BrowserGetText) "
+            "over acting (click/type) when observation alone answers the question.",
         ]
 
         if browser_cards and selected_browser_ids:
