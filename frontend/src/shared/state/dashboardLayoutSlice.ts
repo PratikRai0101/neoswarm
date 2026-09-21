@@ -91,7 +91,7 @@ interface LayoutPayload {
   expandedSessionIds: string[];
 }
 
-function generateTabId(): string {
+export function generateTabId(): string {
   return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
@@ -506,11 +506,11 @@ const dashboardLayoutSlice = createSlice({
 
     addBrowserTab(
       state,
-      action: PayloadAction<{ browserId: string; url: string; makeActive?: boolean }>
+      action: PayloadAction<{ browserId: string; url: string; makeActive?: boolean; tabId?: string }>
     ) {
       const card = state.browserCards[action.payload.browserId];
       if (!card) return;
-      const tabId = generateTabId();
+      const tabId = action.payload.tabId ?? generateTabId();
       card.tabs.push({ id: tabId, url: action.payload.url, title: '' });
       if (action.payload.makeActive !== false) {
         card.activeTabId = tabId;

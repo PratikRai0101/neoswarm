@@ -14,6 +14,10 @@ import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { AgentSession, AgentMessage, stopAgent, handleApproval } from '@/shared/state/agentsSlice';
+import {
+  releaseBrowserControl,
+  useBrowserControl,
+} from '@/shared/browserControl';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 
@@ -99,6 +103,8 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
   );
   const textQuestion = (textPrompt?.tool_input as any)?.question || 'The browser agent has a question.';
   const textContext = (textPrompt?.tool_input as any)?.context || '';
+
+  const controlled = useBrowserControl(session.browser_id || '');
 
   const prevSessionId = useRef(session.id);
   useEffect(() => {
@@ -308,8 +314,34 @@ const BrowserAgentOverlay: React.FC<Props> = ({ session, browserWidth, browserHe
         )}
       </Box>
 
-      {/* Body — text-answer prompt, intervention prompt, OR scrollable action log */}
-      {textPrompt ? (
+      {/* Body — takeover pill, text-answer prompt, intervention prompt, OR action log */}
+      {controlled ? (
+        <Box sx={{ flex: 1, px: 1.25, py: 1, display: 'flex', flexDirection: 'column', gap: 1, justifyContent: 'center' }}>
+          <Typography sx={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 }}>
+            You&apos;re in control — the agent is paused on this browser.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 0.75 }}>
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => { if (session.browser_id) releaseBrowserControl(session.browser_id); }}
+              sx={{
+                bgcolor: '#38bdf8',
+                '&:hover': { bgcolor: '#0ea5e9' },
+                textTransform: 'none',
+                fontSize: '0.68rem',
+                fontWeight: 600,
+                borderRadius: '6px',
+                px: 1.5,
+                py: 0.4,
+                color: '#000',
+              }}
+            >
+              Return to agent
+            </Button>
+          </Box>
+        </Box>
+      ) : textPrompt ? (
         <Box sx={{ flex: 1, px: 1.25, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Typography sx={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 }}>
             {textQuestion}

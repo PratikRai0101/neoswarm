@@ -278,6 +278,20 @@ async def websocket_dashboard(websocket: WebSocket):
                     payload.get("request_id", ""),
                     payload,
                 )
+            elif event == "browser:take_control":
+                browser_id = payload.get("browser_id", "")
+                if browser_id and ws_manager.take_browser_control(browser_id):
+                    await ws_manager.broadcast_global("browser:control_changed", {
+                        "browser_id": browser_id,
+                        "controlled": True,
+                    })
+            elif event == "browser:release_control":
+                browser_id = payload.get("browser_id", "")
+                if browser_id and ws_manager.release_browser_control(browser_id):
+                    await ws_manager.broadcast_global("browser:control_changed", {
+                        "browser_id": browser_id,
+                        "controlled": False,
+                    })
     except WebSocketDisconnect:
         pass
     finally:

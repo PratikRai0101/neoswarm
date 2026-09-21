@@ -13,6 +13,9 @@ class ConnectionManager:
         self.global_connections: list[WebSocket] = []
         self.pending_futures: dict[str, asyncio.Future] = {}
         self.browser_futures: dict[str, asyncio.Future] = {}
+        # Browsers the user has taken direct control of. Agent commands to
+        # these fail fast until control is returned (see take/release below).
+        self.controlled_browsers: set[str] = set()
 
     async def connect_session(self, session_id: str, websocket: WebSocket):
         await websocket.accept()
@@ -101,6 +104,13 @@ class ConnectionManager:
         """Send a browser command to the frontend and wait for the result."""
         if not self.global_connections:
             return {"error": "No dashboard is connected. Open the dashboard to use browser tools."}
+        if browser_id in self.controlled_browsers:
+            return {
+                "error": (
+                    f"Browser '{browser_id}' is under user control. "
+                    "Ask the user to return it to the agent, or wait for them to finish."
+                )
+            }
 
         future = asyncio.get_event_loop().create_future()
         self.browser_futures[request_id] = future
@@ -139,5 +149,22 @@ class ConnectionManager:
                 future.set_result({"error": reason})
                 count += 1
         return count
+
+    def take_browser_control(self, browser_id: str) -> bool:
+        """Mark a browser as user-controlled. Returns True if newly taken."""
+        if not browser_id or browser_id in self.controlled_browsers:
+            return False
+        self.controlled_browsers.add(browser_id)
+        return True
+
+    def release_browser_control(self, browser_id: str) -> bool:
+        """Return a browser to the agent. Returns True if it was controlled."""
+        if browser_id in self.controlled_browsers:
+            self.controlled_browsers.discard(browser_id)
+            return True
+        return False
+
+    def is_browser_controlled(self, browser_id: str) -> bool:
+        return browser_id in self.controlled_browsers
 
 ws_manager = ConnectionManager()

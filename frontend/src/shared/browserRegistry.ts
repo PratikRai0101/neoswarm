@@ -22,6 +22,22 @@ export interface BrowserWebview extends HTMLElement {
 const registry = new Map<string, BrowserWebview>();
 const activeTabMap = new Map<string, string>();
 
+// Popup identity: tabKey ("browserId:tabId") -> opener tab id. Closing a
+// popup tab returns to its opener (see BrowserCard handleCloseTab).
+const popupOpeners = new Map<string, string>();
+
+export function setPopupOpener(browserId: string, tabId: string, openerTabId: string): void {
+  popupOpeners.set(makeKey(browserId, tabId), openerTabId);
+}
+
+export function getPopupOpener(browserId: string, tabId: string): string | undefined {
+  return popupOpeners.get(makeKey(browserId, tabId));
+}
+
+export function clearPopupOpener(browserId: string, tabId: string): void {
+  popupOpeners.delete(makeKey(browserId, tabId));
+}
+
 function makeKey(browserId: string, tabId: string): string {
   return `${browserId}:${tabId}`;
 }
@@ -65,6 +81,9 @@ export function unregisterAllForBrowser(browserId: string): void {
   const prefix = `${browserId}:`;
   for (const key of registry.keys()) {
     if (key.startsWith(prefix)) registry.delete(key);
+  }
+  for (const key of popupOpeners.keys()) {
+    if (key.startsWith(prefix)) popupOpeners.delete(key);
   }
   activeTabMap.delete(browserId);
 }

@@ -28,6 +28,7 @@ import {
   updateBrowserTabTitle,
   updateBrowserTabFavicon,
   reorderBrowserTab,
+  generateTabId,
   type BrowserTab,
 } from '@/shared/state/dashboardLayoutSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
@@ -37,8 +38,18 @@ import {
   registerWebview,
   unregisterWebview,
   setActiveTab as setRegistryActiveTab,
+  setPopupOpener,
+  getPopupOpener,
+  clearPopupOpener,
   type BrowserWebview,
 } from '@/shared/browserRegistry';
+import {
+  takeBrowserControl,
+  releaseBrowserControl,
+  useBrowserControl,
+  POPUP_HOOK_SCRIPT,
+  POPUP_POLL_SCRIPT,
+} from '@/shared/browserControl';
 import { useBrowserActivity } from '@/shared/useBrowserActivity';
 import { getActionLabel } from '@/shared/browserCommandHandler';
 import { resolveInput, isGoogleSearch } from '@/shared/resolveUrl';
@@ -50,6 +61,7 @@ import {
   reloadTauriBrowser,
   historyTauriBrowser,
   getTauriBrowserUrl,
+  evalTauriBrowser,
 } from '@/shared/tauriBrowser';
 import BrowserAgentOverlay from './BrowserAgentOverlay';
 import { useOverlayScrollPassthrough } from './useOverlayScrollPassthrough';
@@ -144,6 +156,7 @@ const BrowserCard: React.FC<Props> = ({
   });
 
   const activity = useBrowserActivity(browserId);
+  const controlled = useBrowserControl(browserId);
   const agentRunning = browserAgentSession?.status === 'running';
   const agentActive = activity.active || agentRunning;
   const agentAction = activity.action;
@@ -229,12 +242,24 @@ const BrowserCard: React.FC<Props> = ({
         }
       };
 
+      // Popups keep their own page identity: open as a new card tab whose
+      // opener is recorded, so closing the popup returns to this tab.
+      const onNewWindow = (e: any) => {
+        const popupUrl = e?.url || (e?.detail && e.detail.url);
+        if (!popupUrl) return;
+        if (typeof e?.preventDefault === 'function') e.preventDefault();
+        const newTabId = generateTabId();
+        setPopupOpener(browserId, newTabId, tabId);
+        dispatch(addBrowserTab({ browserId, url: popupUrl, tabId: newTabId }));
+      };
+
       wv.addEventListener('did-navigate', onNavigate);
       wv.addEventListener('did-navigate-in-page', onNavigate);
       wv.addEventListener('page-title-updated', onTitleUpdate);
       wv.addEventListener('did-start-loading', onLoadStart);
       wv.addEventListener('did-stop-loading', onLoadStop);
       wv.addEventListener('page-favicon-updated', onFaviconUpdate);
+      wv.addEventListener('new-window', onNewWindow);
 
       cleanups.push(() => {
         unregisterWebview(browserId, tabId);
@@ -244,6 +269,7 @@ const BrowserCard: React.FC<Props> = ({
         wv.removeEventListener('did-start-loading', onLoadStart);
         wv.removeEventListener('did-stop-loading', onLoadStop);
         wv.removeEventListener('page-favicon-updated', onFaviconUpdate);
+        wv.removeEventListener('new-window', onNewWindow);
       });
     }
 
@@ -259,14 +285,38 @@ const BrowserCard: React.FC<Props> = ({
 
   useEffect(() => {
     if (!isTauri) return;
-    const pollUrl = () => {
-      void getTauriBrowserUrl(browserId, activeTabId).then((url) => {
+    const hookedTabs = new Set<string>();
+    const poll = async () => {
+      try {
+        const url = await getTauriBrowserUrl(browserId, activeTabId);
         if (url && url !== activeUrl) {
           dispatch(updateBrowserTabUrl({ browserId, tabId: activeTabId, url }));
         }
-      }).catch(() => {});
+        // Keep the window.open hook installed so popups keep their identity
+        // (routed to new card tabs below instead of being swallowed).
+        if (!hookedTabs.has(activeTabId)) {
+          hookedTabs.add(activeTabId);
+          await evalTauriBrowser(browserId, activeTabId, POPUP_HOOK_SCRIPT).catch(() => {});
+        }
+        const pending = await evalTauriBrowser(browserId, activeTabId, POPUP_POLL_SCRIPT).catch(() => 'none');
+        if (pending && pending !== 'none') {
+          try {
+            const { url: popupUrl } = JSON.parse(String(pending));
+            if (popupUrl) {
+              const newTabId = generateTabId();
+              setPopupOpener(browserId, newTabId, activeTabId);
+              dispatch(addBrowserTab({ browserId, url: popupUrl, tabId: newTabId }));
+            }
+          } catch {
+            // Malformed popup payload: ignore.
+          }
+        }
+      } catch {
+        // Webview may not exist yet.
+      }
     };
-    const timer = window.setInterval(pollUrl, 1000);
+    void poll();
+    const timer = window.setInterval(poll, 1000);
     return () => window.clearInterval(timer);
   }, [browserId, activeTabId, activeUrl, dispatch]);
 
@@ -355,8 +405,14 @@ const BrowserCard: React.FC<Props> = ({
 
   const handleCloseTab = useCallback((tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Closing a popup tab returns to its opener, preserving popup identity.
+    const opener = getPopupOpener(browserId, tabId);
+    clearPopupOpener(browserId, tabId);
     dispatch(removeBrowserTab({ browserId, tabId }));
-  }, [dispatch, browserId]);
+    if (opener && tabs.some((t) => t.id === opener)) {
+      dispatch(setActiveBrowserTab({ browserId, tabId: opener }));
+    }
+  }, [dispatch, browserId, tabs]);
 
   const handleSwitchTab = useCallback((tabId: string) => {
     dispatch(setActiveBrowserTab({ browserId, tabId }));
@@ -1051,6 +1107,42 @@ const BrowserCard: React.FC<Props> = ({
             }}
           />
         </Box>
+
+        {/* Direct control: while the agent is active, compact controls beside
+            the address bar let the user take over or hand the browser back. */}
+        {(agentActive || controlled) && (
+          <Tooltip title={controlled ? 'Return the browser to the agent' : 'Take direct control of the browser'} placement="top">
+            <Button
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (controlled) releaseBrowserControl(browserId);
+                else takeBrowserControl(browserId);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              sx={{
+                ml: 0.5,
+                flexShrink: 0,
+                textTransform: 'none',
+                fontSize: '0.68rem',
+                fontWeight: 600,
+                borderRadius: '6px',
+                px: 1,
+                py: 0.25,
+                minWidth: 'auto',
+                color: controlled ? '#000' : c.text.muted,
+                bgcolor: controlled ? '#38bdf8' : 'transparent',
+                border: `1px solid ${controlled ? '#38bdf8' : c.border.subtle}`,
+                '&:hover': {
+                  color: controlled ? '#000' : c.text.primary,
+                  bgcolor: controlled ? '#0ea5e9' : `${c.text.muted}12`,
+                },
+              }}
+            >
+              {controlled ? 'Return to agent' : 'Take control'}
+            </Button>
+          </Tooltip>
+        )}
       </Box>
 
       {/* Loading indicator */}
