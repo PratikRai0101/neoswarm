@@ -83,6 +83,26 @@ def resolve_credential(settings: AppSettings, provider: str) -> tuple[str, str] 
     return None
 
 
+def provider_is_configured(settings: AppSettings, provider: str) -> bool:
+    """Return True when a provider is usable for a request.
+
+    Covers providers that need no credential (Ollama) and user-configured
+    custom providers, then defers to :func:`resolve_credential` so an
+    OAuth-acquired token counts exactly like an API key. Callers that gate
+    model visibility or feature availability on credentials should use this
+    instead of reading individual key fields, which misses OAuth.
+    """
+    p = provider.lower().strip()
+    if p == "ollama":
+        return True
+    if any(
+        custom.name.lower() == p
+        for custom in getattr(settings, "custom_providers", [])
+    ):
+        return True
+    return resolve_credential(settings, provider) is not None
+
+
 def validate_credentials(settings: AppSettings, provider: str = "anthropic") -> None:
     """Raise ValueError if credentials are missing for the given provider.
 

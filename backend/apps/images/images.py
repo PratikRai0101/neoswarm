@@ -14,6 +14,7 @@ from backend.apps.artifacts.artifacts import publish_bytes
 from backend.apps.artifacts.models import Artifact
 from backend.apps.images.models import ImageGenerateRequest
 from backend.apps.settings.models import AppSettings
+from backend.apps.settings.credentials import get_provider_credentials
 from backend.apps.settings.settings import load_settings
 from backend.config.Apps import SubApp
 
@@ -36,10 +37,12 @@ class ImageGenerationService:
         request: ImageGenerateRequest,
         settings: AppSettings,
     ) -> GeneratedImageResponse:
-        if not settings.openai_api_key:
-            raise ValueError("OpenAI API key not configured. Set it in Settings.")
+        # Raises with a credential-aware message when nothing is configured.
+        credentials = get_provider_credentials(settings, "openai")
+        # OpenAI-compatible bearer auth accepts an OAuth token in the api_key slot.
+        api_key = credentials.get("auth_token") or credentials.get("api_key", "")
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        client = AsyncOpenAI(api_key=api_key)
         try:
             try:
                 response = await client.images.generate(

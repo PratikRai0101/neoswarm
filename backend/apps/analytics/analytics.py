@@ -17,6 +17,7 @@ from backend.apps.analytics.collector import (
     record,
     identify,
 )
+from backend.apps.settings.credentials import provider_is_configured
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +67,11 @@ async def analytics_lifespan():
             except Exception:
                 pass
 
-        providers = []
-        if getattr(settings, "anthropic_api_key", None):
-            providers.append("anthropic")
-        if getattr(settings, "openai_api_key", None):
-            providers.append("openai")
-        if getattr(settings, "google_api_key", None):
-            providers.append("gemini")
-        if getattr(settings, "openrouter_api_key", None):
-            providers.append("openrouter")
+        providers = [
+            name
+            for name in ("anthropic", "openai", "gemini", "openrouter")
+            if provider_is_configured(settings, name)
+        ]
         for cp in getattr(settings, "custom_providers", []):
             providers.append(cp.name)
 

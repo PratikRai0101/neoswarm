@@ -257,3 +257,66 @@ def test_missing_credentials_error_mentions_oauth():
 
     with pytest.raises(ValueError, match="OAuth"):
         create_provider("openai", AppSettings())
+
+
+def test_provider_is_configured_accepts_oauth_tokens():
+    from backend.apps.settings.credentials import provider_is_configured
+
+    oauth_only = AppSettings(anthropic_oauth_token="oauth-anthropic")
+    assert provider_is_configured(oauth_only, "anthropic")
+    assert provider_is_configured(oauth_only, "claude")
+    assert provider_is_configured(oauth_only, "ollama")
+    assert not provider_is_configured(oauth_only, "openai")
+    assert not provider_is_configured(oauth_only, "gemini")
+
+    key_only = AppSettings(openai_api_key="sk-key")
+    assert provider_is_configured(key_only, "openai")
+    assert not provider_is_configured(key_only, "anthropic")
+
+    custom = AppSettings(
+        custom_providers=[
+            CustomProvider(
+                name="Private Gateway",
+                base_url="https://models.internal.example/v1",
+                api_key="custom-key",
+            )
+        ]
+    )
+    assert provider_is_configured(custom, "private gateway")
+
+
+def test_auxiliary_provider_check_accepts_oauth_tokens():
+    from backend.apps.agents.auxiliary import _provider_is_configured
+
+    oauth_only = AppSettings(anthropic_oauth_token="oauth-anthropic")
+    assert _provider_is_configured(oauth_only, "anthropic")
+    assert not _provider_is_configured(oauth_only, "openai")
+
+
+@pytest.mark.asyncio
+async def test_list_models_surfaces_oauth_connected_provider(monkeypatch):
+    import httpx
+    import backend.apps.agents.agents as agents_api
+    import backend.apps.settings.settings as settings_api
+
+    class OfflineClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            raise httpx.ConnectError("Ollama unavailable")
+
+    monkeypatch.setattr(httpx, "AsyncClient", OfflineClient)
+
+    monkeypatch.setattr(
+        settings_api, "load_settings", lambda: AppSettings(anthropic_oauth_token="oauth")
+    )
+    connected = await agents_api.list_models()
+    assert "Anthropic" in connected["models"]
+
+    monkeypatch.setattr(settings_api, "load_settings", lambda: AppSettings())
+    unconfigured = await agents_api.list_models()
+    assert "Anthropic" not in unconfigured["models"]

@@ -4,6 +4,7 @@ from backend.apps.agents.ws_manager import ws_manager
 from backend.apps.agents.models import AgentConfig, ApprovalResponse
 from backend.apps.agents.orchestrator import orchestrator, mission_to_dict
 from backend.apps.agents.worktrees import WorktreeDirtyError, WorktreeError
+from backend.apps.settings.credentials import provider_is_configured
 from contextlib import asynccontextmanager
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
@@ -322,22 +323,10 @@ async def list_models():
             # models are added below only after /api/tags confirms installation.
             if m.get("subscription_only") or api == "ollama":
                 continue
-            if api == "anthropic":
-                has_key = bool(getattr(settings, "anthropic_api_key", None))
-                if not has_key:
-                    continue
-            elif api == "openai":
-                has_key = bool(getattr(settings, "openai_api_key", None))
-                if not has_key:
-                    continue
-            elif api == "gemini":
-                has_key = bool(getattr(settings, "google_api_key", None))
-                if not has_key:
-                    continue
-            elif api == "openrouter":
-                has_key = bool(getattr(settings, "openrouter_api_key", None))
-                if not has_key:
-                    continue
+            if api in {"anthropic", "openai", "gemini", "openrouter"} and not provider_is_configured(
+                settings, api
+            ):
+                continue
             visible.append(
                 {
                     "provider": provider_name,

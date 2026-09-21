@@ -14,6 +14,7 @@ from backend.apps.agents.providers.registry import (
     create_provider,
     provider_for_model,
 )
+from backend.apps.settings.credentials import provider_is_configured
 
 if TYPE_CHECKING:
     from backend.apps.settings.models import AppSettings
@@ -38,20 +39,8 @@ async def _list_ollama_models() -> list[str]:
 
 
 def _provider_is_configured(settings: AppSettings, provider: str) -> bool:
-    if provider == "anthropic":
-        return bool(settings.anthropic_api_key)
-    if provider == "openai":
-        return bool(settings.openai_api_key)
-    if provider == "google":
-        return bool(settings.google_api_key)
-    if provider == "openrouter":
-        return bool(settings.openrouter_api_key)
-    if provider == "ollama":
-        return True
-    return any(
-        custom.name.lower() == provider.lower()
-        for custom in settings.custom_providers
-    )
+    """Delegate to shared resolution so OAuth tokens count as configured."""
+    return provider_is_configured(settings, provider)
 
 
 def _custom_provider_for_model(settings: AppSettings, model: str) -> str | None:
