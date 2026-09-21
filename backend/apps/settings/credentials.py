@@ -117,13 +117,15 @@ def validate_credentials(settings: AppSettings, provider: str = "anthropic") -> 
         if resolve_credential(settings, "anthropic") is not None:
             return
         raise ValueError(
-            "Anthropic credentials not configured. Add an API key or connect OAuth in Settings."
+            "Anthropic credentials not configured (no API key, OAuth sign-in, "
+            "or subscription token). Add one in Settings."
         )
     elif p == "openai":
         if resolve_credential(settings, "openai") is not None:
             return
         raise ValueError(
-            "OpenAI credentials not configured. Add an API key or connect OAuth in Settings."
+            "OpenAI credentials not configured (no API key, OAuth sign-in, "
+            "or subscription token). Add one in Settings."
         )
     elif p in ("gemini", "google"):
         if getattr(settings, "google_api_key", None):
