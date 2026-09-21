@@ -41,7 +41,7 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 | Phase 3: Orchestrator Agent | ✅ Complete | Durable mission API/UI with parallel or sequential workers |
 | Phase 4: CLI + TUI | ✅ Complete | Streaming Textual TUI and legacy Click commands are covered by the CLI test suite |
 | Phase 5: Packaging | 🟡 Pipeline complete | Bundled PyInstaller backend and macOS DMG targets are configured for Intel and Apple Silicon; release artifacts still need target verification |
-| Phase 6: Provider Auth | 🟡 API-key auth complete | Secure settings/keychain storage is complete; direct model-provider OAuth is not implemented |
+| Phase 6: Provider Auth | ✅ Complete | Secure settings/keychain storage plus direct model-provider OAuth for Anthropic and OpenAI, wired through provider construction |
 | Phase 7: Enhanced TUI | ✅ Complete | Session rail, streaming transcript, command center, approvals, and reconnecting transport |
 | Phase 8: Native App Runtime | 🔄 In Progress | Tauri bridge, browser cards, MCP execution, memory, automations, and release hardening |
 
@@ -51,7 +51,7 @@ NeoSwarm aims to be a powerful local-first AI agent orchestrator similar to Open
 - Tauri browser cards now use native child webviews for their visual surface, but browser command/control parity and lifecycle behavior need target-platform testing.
 - Release artifacts are configured for macOS DMG builds on Intel and Apple Silicon, but signed/notarized packaging and updater smoke tests remain.
 - Optional approval-gated native desktop control is implemented through the host computer adapter; macOS Accessibility and Screen Recording permissions still need host testing.
-- Browser control parity, release hardening, and direct model-provider OAuth remain; local Git/PR workflows, artifact viewing, multi-tab terminals, saved SSH workspaces, and OpenAI image generation are implemented.
+- Browser control parity and release hardening remain; direct model-provider OAuth, local Git/PR workflows, artifact viewing, multi-tab terminals, saved SSH workspaces, and OpenAI image generation are implemented.
 
 ---
 
@@ -157,7 +157,7 @@ NeoSwarm has browser and optional native desktop computer-use paths:
 | `neoswarm auth status` | ✅ | Shows API-key, subscription-token, Copilot, Ollama, and custom-provider status without exposing secrets |
 | Auth storage | ✅ | `settings.json` plus OS keychain, with owner-only file fallback |
 | API key input | ✅ | Settings UI and CLI support direct provider keys |
-| OAuth (future) | 🟡 | Tool OAuth and Copilot device flow exist; direct model-provider OAuth remains future work |
+| OAuth | ✅ | Tool OAuth and Copilot device flow, plus direct model-provider OAuth for Anthropic (browser PKCE) and OpenAI (device code), resolved by the provider factory |
 | Env var priority | ✅ | ENV > keychain/settings > defaults |
 
 **Files:** `backend/apps/settings/`, `cli/main.py`
@@ -447,7 +447,7 @@ neoswarm server           # Start backend server
 - Native AgentLoop built-ins: filesystem, shell, question, web, memory, scheduling, and Git tools; configured MCP/browser delegation runs through `MCPClientManager`
 - Persistent memory lives under the configured data root in `memory/`; schedules live under `schedules/`
 - Native desktop control is optional (`backend/requirements-computer.txt`) and defaults to approval-required policy
-- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 136 tests pass)
+- Validation: `PYTHONPATH=. backend/.venv/bin/python -m pytest backend/tests cli/tests -q` (currently 172 tests pass)
 
 ---
 
