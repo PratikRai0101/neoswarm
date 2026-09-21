@@ -124,6 +124,7 @@ pub fn run() {
             browser::browser_get_elements,
             browser::browser_list_interactives,
             browser::browser_click_index,
+            browser::browser_hover,
             browser::browser_wait,
             open_artifact,
         ])

@@ -49,6 +49,11 @@
 //!        `selector` scopes the interactive-element query (`""` or `"body"` for
 //!        the whole document); `index` is 1-based and matches the index produced
 //!        by `browser_list_interactives`. `clickX`/`clickY` are percentages.
+//! - `browser_hover(label: String, selector: String)`
+//!     -> `{ "text": String, "url": String, "hoverX": number, "hoverY": number }`
+//!        or `{ "error": String }`
+//!        Dispatches pointer/mouse over events so `:hover` menus and tooltips
+//!        open. `hoverX`/`hoverY` are percentages in `[0, 100]` of the viewport.
 //! - `browser_wait(label: String, milliseconds: number)`
 //!     -> `{ "text": String, "url": String, "title": String }`
 //!        `milliseconds` is clamped to `[1, 30000]`; invalid values become 500.
@@ -58,8 +63,8 @@
 //!
 //! Implementation note: the DOM-based commands (`browser_click`,
 //! `browser_type`, `browser_scroll`, `browser_press_key`, `browser_get_text`,
-//! `browser_get_elements`, `browser_list_interactives`, `browser_click_index`)
-//! execute their DOM logic inside the target webview, because Tauri/wry exposes
+//! `browser_get_elements`, `browser_list_interactives`, `browser_click_index`,
+//! `browser_hover`) execute their DOM logic inside the target webview, because Tauri/wry exposes
 //! no native DOM or input-dispatch API. `browser_screenshot` is different: it is
 //! captured natively on macOS (via `/usr/sbin/screencapture`) without running
 //! any JavaScript.
@@ -462,6 +467,35 @@ const CLICK_INDEX_SCRIPT: &str = r#"(() => {
 
 const WAIT_SCRIPT: &str = "(() => ({ url: location.href, title: document.title }))()";
 
+const HOVER_SCRIPT: &str = r#"(() => {
+  try {
+    const selector = __NEOSWARM_SELECTOR__;
+    const el = document.querySelector(selector);
+    if (!el) return { error: 'Element not found: ' + selector };
+    el.scrollIntoView({ block: 'center' });
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const base = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+    if (typeof PointerEvent === 'function') {
+      el.dispatchEvent(new PointerEvent('pointerover', { ...base, pointerId: 1 }));
+      el.dispatchEvent(new PointerEvent('pointerenter', { ...base, pointerId: 1 }));
+      el.dispatchEvent(new PointerEvent('pointermove', { ...base, pointerId: 1 }));
+    }
+    el.dispatchEvent(new MouseEvent('mouseover', base));
+    el.dispatchEvent(new MouseEvent('mouseenter', base));
+    el.dispatchEvent(new MouseEvent('mousemove', base));
+    return {
+      text: 'Hovered element: ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
+      url: location.href,
+      hoverX: window.innerWidth > 0 ? (x / window.innerWidth) * 100 : 50,
+      hoverY: window.innerHeight > 0 ? (y / window.innerHeight) * 100 : 50,
+    };
+  } catch (error) {
+    return { error: 'Hover failed: ' + String(error) };
+  }
+})()"#;
+
 #[tauri::command]
 pub async fn browser_click(
     app: AppHandle,
@@ -683,6 +717,20 @@ pub async fn browser_click_index(
             ("__NEOSWARM_SELECTOR__", script_literal(&selector)),
             ("__NEOSWARM_INDEX__", index.to_string()),
         ],
+    );
+    eval_json(&webview, script).await
+}
+
+#[tauri::command]
+pub async fn browser_hover(
+    app: AppHandle,
+    label: String,
+    selector: String,
+) -> Result<Value, String> {
+    let webview = get_webview(&app, &label)?;
+    let script = render_script(
+        HOVER_SCRIPT,
+        &[("__NEOSWARM_SELECTOR__", script_literal(&selector))],
     );
     eval_json(&webview, script).await
 }
