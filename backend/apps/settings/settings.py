@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 import logging
 from contextlib import asynccontextmanager
 from fastapi import HTTPException, Query, UploadFile, File
@@ -10,6 +11,11 @@ from typing import Optional
 
 from backend.config.Apps import SubApp
 from backend.apps.settings.models import AppSettings, DEFAULT_SYSTEM_PROMPT
+from backend.apps.settings.oauth import (
+    OAUTH_PROVIDERS,
+    OAuthFlowManager,
+    OAuthState,
+)
 from backend.apps.settings.secret_store import (
     custom_provider_secret_name,
     delete_secret,
@@ -37,6 +43,11 @@ SECRET_FIELDS = frozenset(
         "gemini_subscription_token",
         "copilot_github_token",
         "copilot_token",
+        # Direct model-provider OAuth tokens acquired in this package.
+        "anthropic_oauth_token",
+        "anthropic_oauth_refresh_token",
+        "openai_oauth_token",
+        "openai_oauth_refresh_token",
     }
 )
 ENV_SECRET_FIELDS = {
@@ -44,6 +55,9 @@ ENV_SECRET_FIELDS = {
     "OPENAI_API_KEY": "openai_api_key",
     "GOOGLE_API_KEY": "google_api_key",
     "OPENROUTER_API_KEY": "openrouter_api_key",
+    # OAuth tokens use the same environment-first precedence as API keys.
+    "CLAUDE_CODE_OAUTH_TOKEN": "anthropic_oauth_token",
+    "OPENAI_OAUTH_TOKEN": "openai_oauth_token",
 }
 
 
@@ -214,6 +228,85 @@ def _merged_settings(current: AppSettings, patch: dict) -> AppSettings:
         raise HTTPException(status_code=422, detail=error.errors(include_url=False)) from error
 
 
+_oauth_manager = OAuthFlowManager()
+
+
+def _require_oauth_provider(provider: str) -> str:
+    """Normalize and validate a provider name for the OAuth endpoints."""
+    name = (provider or "").strip().lower()
+    if name not in OAUTH_PROVIDERS:
+        raise HTTPException(
+            status_code=404, detail=f"OAuth is not supported for provider: {provider}"
+        )
+    return name
+
+
+def _persist_oauth_tokens(provider: str, tokens: dict) -> None:
+    """Store acquired OAuth tokens through the existing secret_store path.
+
+    Tokens are written with :func:`_save_settings`, which prefers the platform
+    keychain and keeps only the owner-only settings-file fallback. Environment
+    values continue to win, so an env-provided token is never overwritten.
+    """
+    config = OAUTH_PROVIDERS[provider]
+    access_token = tokens.get("access_token")
+    if not access_token:
+        return
+
+    current = load_settings()
+    setattr(current, config.access_token_field, access_token)
+    if tokens.get("refresh_token"):
+        setattr(current, config.refresh_token_field, tokens["refresh_token"])
+    if tokens.get("expires_at") is not None:
+        setattr(current, config.expires_at_field, tokens["expires_at"])
+    if tokens.get("account"):
+        setattr(current, config.account_field, tokens["account"])
+
+    _save_settings(
+        current,
+        secret_fields_to_update={
+            config.access_token_field,
+            config.refresh_token_field,
+        },
+    )
+
+
+def _oauth_status(provider: str) -> dict:
+    """Return connection state for one provider without any token material."""
+    config = OAUTH_PROVIDERS[provider]
+    current = load_settings()
+    pending = _oauth_manager.status(provider)
+    access_token = getattr(current, config.access_token_field, None)
+    expires_at = getattr(current, config.expires_at_field, None)
+
+    if pending.state == OAuthState.PENDING.value:
+        state = OAuthState.PENDING.value
+    elif access_token and expires_at and expires_at < time.time():
+        state = OAuthState.EXPIRED.value
+    elif access_token:
+        state = OAuthState.CONNECTED.value
+    else:
+        state = OAuthState.DISCONNECTED.value
+
+    payload = {
+        "provider": provider,
+        "flow": config.flow,
+        "state": state,
+        "account": getattr(current, config.account_field, None),
+        "expires_at": expires_at,
+    }
+    if state == OAuthState.PENDING.value:
+        if pending.user_code:
+            payload["user_code"] = pending.user_code
+        if pending.verification_uri:
+            payload["verification_uri"] = pending.verification_uri
+        if pending.auth_url:
+            payload["auth_url"] = pending.auth_url
+        if pending.interval:
+            payload["interval"] = pending.interval
+    return payload
+
+
 @settings.router.get("")
 async def get_settings():
     return _public_settings(load_settings())
@@ -247,6 +340,8 @@ async def update_settings(body: dict):
     new_dict = current.model_dump()
     secret_keys = {"anthropic_api_key", "openai_api_key", "google_api_key", "openrouter_api_key",
                    "claude_subscription_token", "openai_subscription_token", "gemini_subscription_token",
+                   "anthropic_oauth_token", "anthropic_oauth_refresh_token",
+                   "openai_oauth_token", "openai_oauth_refresh_token",
                    "copilot_github_token", "copilot_token", "installation_id"}
     safe_changed = [
         k for k in new_dict
@@ -276,6 +371,69 @@ async def reset_system_prompt():
     current.default_system_prompt = DEFAULT_SYSTEM_PROMPT
     _save_settings(current)
     return {"ok": True, "settings": _public_settings(current)}
+
+
+@settings.router.get("/oauth")
+async def oauth_overview():
+    """Report OAuth connection state for every supported provider."""
+    return {"providers": [_oauth_status(name) for name in OAUTH_PROVIDERS]}
+
+
+@settings.router.post("/oauth/{provider}/start")
+async def oauth_start(provider: str):
+    """Begin an OAuth flow and return instructions (never tokens)."""
+    name = _require_oauth_provider(provider)
+    result = await _oauth_manager.start(name)
+    return result.public()
+
+
+@settings.router.get("/oauth/{provider}")
+async def oauth_status(provider: str):
+    """Return OAuth connection state for a single provider."""
+    name = _require_oauth_provider(provider)
+    return _oauth_status(name)
+
+
+@settings.router.post("/oauth/{provider}/poll")
+async def oauth_poll(provider: str):
+    """Advance a device-code flow, persisting tokens on success."""
+    name = _require_oauth_provider(provider)
+    result = await _oauth_manager.poll(name)
+    if result.state == OAuthState.CONNECTED.value and result.tokens:
+        _persist_oauth_tokens(name, result.tokens)
+    return _oauth_status(name)
+
+
+@settings.router.post("/oauth/{provider}/complete")
+async def oauth_complete(provider: str, body: dict):
+    """Finish a browser-PKCE flow, persisting tokens on success."""
+    name = _require_oauth_provider(provider)
+    raw_code = body.get("code") if isinstance(body, dict) else None
+    result = await _oauth_manager.complete(name, str(raw_code or ""))
+    if result.state == OAuthState.CONNECTED.value and result.tokens:
+        _persist_oauth_tokens(name, result.tokens)
+    return _oauth_status(name)
+
+
+@settings.router.post("/oauth/{provider}/disconnect")
+async def oauth_disconnect(provider: str):
+    """Remove OAuth-acquired credentials for a provider."""
+    name = _require_oauth_provider(provider)
+    config = OAUTH_PROVIDERS[name]
+    current = load_settings()
+    for field in (config.access_token_field, config.refresh_token_field):
+        setattr(current, field, None)
+    setattr(current, config.expires_at_field, None)
+    setattr(current, config.account_field, None)
+    _save_settings(
+        current,
+        secret_fields_to_update={
+            config.access_token_field,
+            config.refresh_token_field,
+        },
+    )
+    _oauth_manager.cancel(name)
+    return {"ok": True, **_oauth_status(name)}
 
 
 class BrowseResponse(BaseModel):

@@ -57,6 +57,17 @@ class AppSettings(BaseModel):
     claude_subscription_token: Optional[str] = None
     openai_subscription_token: Optional[str] = None
     gemini_subscription_token: Optional[str] = None
+    # Direct model-provider OAuth tokens acquired through the device-code or
+    # browser-PKCE flow in ``oauth.py``. Access/refresh tokens are secret and
+    # live in the platform keychain; expiry and account label are safe metadata.
+    anthropic_oauth_token: Optional[str] = None
+    anthropic_oauth_refresh_token: Optional[str] = None
+    anthropic_oauth_expires_at: Optional[float] = None
+    anthropic_oauth_account: Optional[str] = None
+    openai_oauth_token: Optional[str] = None
+    openai_oauth_refresh_token: Optional[str] = None
+    openai_oauth_expires_at: Optional[float] = None
+    openai_oauth_account: Optional[str] = None
     # GitHub Copilot
     copilot_github_token: Optional[str] = None
     copilot_token: Optional[str] = None

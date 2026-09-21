@@ -38,8 +38,8 @@ def _auth_provider_rows(settings: dict[str, Any]) -> list[tuple[str, bool]]:
         return any(bool(settings.get(field)) for field in fields)
 
     rows = [
-        ("Anthropic", configured("anthropic_api_key", "claude_subscription_token")),
-        ("OpenAI", configured("openai_api_key", "openai_subscription_token")),
+        ("Anthropic", configured("anthropic_api_key", "claude_subscription_token", "anthropic_oauth_token")),
+        ("OpenAI", configured("openai_api_key", "openai_subscription_token", "openai_oauth_token")),
         ("Google", configured("google_api_key", "gemini_subscription_token")),
         ("OpenRouter", configured("openrouter_api_key")),
         ("Ollama", True),
@@ -53,6 +53,136 @@ def _auth_provider_rows(settings: dict[str, Any]) -> list[tuple[str, bool]]:
         if name and base_url:
             rows.append((f"Custom: {name}", True))
     return rows
+
+
+_OAUTH_CAPABLE_PROVIDERS = frozenset({"anthropic", "openai"})
+
+
+def _oauth_state_map(payload: dict[str, Any] | None) -> dict[str, str]:
+    """Extract provider -> state from the settings OAuth overview payload."""
+    states: dict[str, str] = {}
+    for entry in (payload or {}).get("providers", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        provider = str(entry.get("provider", "")).strip().lower()
+        state = str(entry.get("state", "")).strip().lower()
+        if provider:
+            states[provider] = state
+    return states
+
+
+def _oauth_state_label(state: str) -> str:
+    """Human label for an OAuth state; contains no credential material."""
+    return {
+        "connected": "✓ Connected",
+        "pending": "Pending",
+        "expired": "Expired",
+        "failed": "Failed",
+        "disconnected": "Not linked",
+    }.get((state or "").strip().lower(), "Not linked")
+
+
+async def _poll_oauth_until_settled(
+    client: httpx.AsyncClient, base_url: str, provider: str, interval: float
+) -> None:
+    """Poll a device-code login until it connects, fails, or expires."""
+    interval = max(interval or 5.0, 0.5)
+    for _ in range(int(900 / interval) + 1):
+        await asyncio.sleep(interval)
+        try:
+            resp = await client.post(
+                f"{base_url}/api/settings/oauth/{provider}/poll", timeout=30.0
+            )
+        except Exception as exc:
+            console.print(f"[red]✗ OAuth poll failed: {exc}[/red]")
+            return
+        if resp.status_code != 200:
+            console.print(f"[red]✗ OAuth poll failed ({resp.status_code})[/red]")
+            return
+        state = str(resp.json().get("state", ""))
+        if state == "connected":
+            console.print(f"[green]✓ {provider.title()} connected[/green]")
+            return
+        if state in {"expired", "failed", "disconnected"}:
+            console.print(f"[red]✗ OAuth {state or 'failed'}[/red]")
+            return
+    console.print("[red]✗ OAuth timed out. Try again.[/red]")
+
+
+def _oauth_login(provider: str) -> None:
+    """Connect a provider through its device-code or browser OAuth flow."""
+    name = (provider or "").strip().lower()
+    if name not in _OAUTH_CAPABLE_PROVIDERS:
+        console.print("[red]OAuth is available for anthropic and openai[/red]")
+        return
+
+    console.print(f"[cyan]Starting {name} OAuth...[/cyan]\n")
+
+    async def run():
+        if not await check_backend():
+            console.print("[red]✗ Backend not running. Start with: neoswarm server[/red]")
+            return
+
+        base_url = get_backend_url()
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(
+                    f"{base_url}/api/settings/oauth/{name}/start", timeout=30.0
+                )
+            except Exception as exc:
+                console.print(f"[red]✗ OAuth start failed: {exc}[/red]")
+                return
+            if resp.status_code != 200:
+                console.print(f"[red]✗ OAuth start failed ({resp.status_code})[/red]")
+                return
+
+            data = resp.json()
+            flow = str(data.get("flow", ""))
+            url = str(data.get("verification_uri") or data.get("auth_url") or "")
+
+            import webbrowser
+
+            if flow == "device_code":
+                console.print(f"[yellow]Step 1:[/yellow] Visit: {url}")
+                console.print(
+                    f"[yellow]Step 2:[/yellow] Enter code: "
+                    f"[bold cyan]{data.get('user_code', '')}[/bold cyan]\n"
+                )
+                if url:
+                    webbrowser.open(url)
+                console.print("[dim]Waiting for authentication...[/dim]\n")
+                await _poll_oauth_until_settled(
+                    client, base_url, name, float(data.get("interval") or 5.0)
+                )
+                return
+
+            console.print("[yellow]Step 1:[/yellow] Open this URL in your browser:")
+            console.print(f"[cyan]{url}[/cyan]\n")
+            if url:
+                webbrowser.open(url)
+            code = click.prompt("Paste the authorization code", hide_input=True).strip()
+            if not code:
+                console.print("[red]✗ Authorization code required[/red]")
+                return
+            try:
+                resp = await client.post(
+                    f"{base_url}/api/settings/oauth/{name}/complete",
+                    json={"code": code},
+                    timeout=30.0,
+                )
+            except Exception as exc:
+                console.print(f"[red]✗ OAuth completion failed: {exc}[/red]")
+                return
+            if resp.status_code != 200:
+                console.print(f"[red]✗ OAuth completion failed ({resp.status_code})[/red]")
+                return
+            state = str(resp.json().get("state", ""))
+            if state == "connected":
+                console.print(f"[green]✓ {name.title()} connected[/green]")
+            else:
+                console.print(f"[red]✗ OAuth {state or 'failed'}[/red]")
+
+    asyncio.run(run())
 
 
 async def check_backend() -> bool:
@@ -346,7 +476,13 @@ def auth():
 @auth.command()
 @click.option("--provider", "-p", default=None, help="Provider to configure")
 @click.option("--api-key", "-k", default=None, help="API key for the provider")
-def login(provider: Optional[str], api_key: Optional[str]):
+@click.option(
+    "--oauth",
+    "use_oauth",
+    is_flag=True,
+    help="Connect through browser/device OAuth instead of an API key",
+)
+def login(provider: Optional[str], api_key: Optional[str], use_oauth: bool):
     """Configure API credentials for a provider."""
     console.print("[green]🐝 NeoSwarm Auth - Login[/green]\n")
 
@@ -361,6 +497,10 @@ def login(provider: Optional[str], api_key: Optional[str]):
         choice = click.prompt("Enter choice", type=int, default=1, show_default=False)
         providers = ["anthropic", "openai", "google", "ollama", "openrouter", "copilot"]
         provider = providers[choice - 1]
+
+    if use_oauth:
+        _oauth_login(provider)
+        return
 
     if provider == "copilot":
         client_id = "Ov23liLDz3MEPhK1969Z"
@@ -482,8 +622,22 @@ def logout(provider: Optional[str]):
         return
 
     provider_key_map = {
-        "anthropic": ("anthropic_api_key", "claude_subscription_token"),
-        "openai": ("openai_api_key", "openai_subscription_token"),
+        "anthropic": (
+            "anthropic_api_key",
+            "claude_subscription_token",
+            "anthropic_oauth_token",
+            "anthropic_oauth_refresh_token",
+            "anthropic_oauth_expires_at",
+            "anthropic_oauth_account",
+        ),
+        "openai": (
+            "openai_api_key",
+            "openai_subscription_token",
+            "openai_oauth_token",
+            "openai_oauth_refresh_token",
+            "openai_oauth_expires_at",
+            "openai_oauth_account",
+        ),
         "google": ("google_api_key", "gemini_subscription_token"),
         "openrouter": ("openrouter_api_key",),
     }
@@ -544,9 +698,20 @@ def status():
             resp = await client.get(f"{get_backend_url()}/api/settings")
             if resp.status_code == 200:
                 settings = resp.json()
+                oauth_states: dict[str, str] = {}
+                try:
+                    oauth_resp = await client.get(
+                        f"{get_backend_url()}/api/settings/oauth", timeout=10.0
+                    )
+                    if oauth_resp.status_code == 200:
+                        oauth_states = _oauth_state_map(oauth_resp.json())
+                except Exception:
+                    oauth_states = {}
+
                 table = Table(title="Providers")
                 table.add_column("Provider", style="cyan")
                 table.add_column("Status", style="green")
+                table.add_column("OAuth", style="magenta")
                 table.add_column("Default", style="yellow")
 
                 providers = _auth_provider_rows(settings)
@@ -554,8 +719,14 @@ def status():
 
                 for name, has_key in providers:
                     status_str = "[green]✓ Connected" if has_key else "[dim]Not configured[/dim]"
+                    if name.lower() in _OAUTH_CAPABLE_PROVIDERS:
+                        oauth_str = _oauth_state_label(
+                            oauth_states.get(name.lower(), "")
+                        )
+                    else:
+                        oauth_str = "—"
                     default_str = "[bold]*[/bold]" if (name.lower() == "anthropic" and default_model == "sonnet") or name.lower() == default_model else ""
-                    table.add_row(name, status_str, default_str)
+                    table.add_row(name, status_str, oauth_str, default_str)
 
                 console.print(table)
             else:
