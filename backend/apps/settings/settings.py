@@ -72,8 +72,29 @@ settings = SubApp("settings", settings_lifespan)
 
 def _load_settings_file() -> AppSettings:
     if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE) as file:
-            return AppSettings(**json.load(file))
+        try:
+            with open(SETTINGS_FILE) as file:
+                return AppSettings(**json.load(file))
+        except Exception as exc:
+            # A garbled settings file must fail loud without wiping the
+            # user's configuration: preserve it as a timestamped backup and
+            # fall back to defaults so the app still starts.
+            backup = f"{SETTINGS_FILE}.corrupt-{int(time.time())}.bak"
+            try:
+                os.replace(SETTINGS_FILE, backup)
+                logger.error(
+                    "Settings file %s was damaged (%s); moved to %s and using defaults",
+                    SETTINGS_FILE,
+                    exc,
+                    backup,
+                )
+            except OSError:
+                logger.error(
+                    "Settings file %s was damaged (%s); could not back it up",
+                    SETTINGS_FILE,
+                    exc,
+                )
+            return AppSettings()
     return AppSettings()
 
 
